@@ -39,6 +39,18 @@ def classify_llm_error(exc: Exception) -> LLMErrorInfo:
     name = type(exc).__name__
     status = _status_code(exc)
 
+    message = str(exc).lower()
+
+    if status == 413 or "request too large" in message or "context_length_exceeded" in message or "tpm limit" in message or "token" in message and "limit" in message:
+        return LLMErrorInfo(
+            kind="token_limit",
+            retryable=False,
+            user_message=(
+                "The request was too large for the AI provider's token limit. Trimming context "
+                "and retrying automatically."
+            ),
+        )
+
     if "RateLimit" in name or status == 429:
         return LLMErrorInfo(
             kind="rate_limit",

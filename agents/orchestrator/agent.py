@@ -211,8 +211,7 @@ class OrchestratorAgent:
                                     final_text = event.content
                                     ended_in_final_answer = True
                                 if on_event is not None:
-                                    translated = self._translate_event(event)
-                                    if translated:
+                                    for translated in self._translate_event(event):
                                         await on_event(translated)
 
                             if cancel_check is not None and await cancel_check():
@@ -311,6 +310,7 @@ class OrchestratorAgent:
         "generate_dashboard": "Building a real-time dashboard",
         "get_current_date": "Checking today's date",
         "recall_user_info": "Recalling saved preferences",
+        "request_capabilities": "Preparing to generate a file",
     }
 
     _translate_event = staticmethod(make_tool_event_translator(_FRIENDLY_TOOL_NAMES))

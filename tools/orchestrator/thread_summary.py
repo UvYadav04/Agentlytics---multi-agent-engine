@@ -5,13 +5,44 @@ from tools.llm_call import ask_llm_async
 _SUMMARY_MARKER = "SUMMARY:"
 _PREFERENCES_MARKER = "NEW_PREFERENCES:"
 
+DEFAULT_TOKEN_BUDGET = 12000
+PRUNE_THRESHOLD_RATIO = 0.85
+
+COMPRESSION_PROMPT = """Compress the following conversation history into a compact plain-language
+summary a data-analysis agent can use as background context. Fold the previous summary and all
+the older turns below into one updated summary, a few sentences at most. Preserve concrete facts
+(file names, columns, numbers, decisions) and drop pleasantries and redundant detail. If a later
+turn corrects or contradicts an earlier one, keep only the corrected version.
+
+Previous summary:
+{previous_summary}
+
+Older turns to fold in:
+{fold_turns}
+
+Reply with the updated summary text only, nothing else."""
+
 TURN_ANALYSIS_PROMPT = """You maintain two things for an ongoing data-analysis conversation:
 
 1. A rolling summary of everything that happened BEFORE the conversation's raw recent-turns
 window (only relevant once the chat has grown past that window - see below).
-2. A short list of durable user preferences/facts worth remembering across future conversations
-(e.g. "prefers bar charts over pie charts", "works in the finance team", "always wants dollar
-amounts rounded to 2 decimals") - NOT one-off task details specific to a single question.
+2. A short list of durable user preferences/facts worth remembering across future conversations -
+things that would still be true and useful in a completely different chat, about a different
+topic, weeks from now (e.g. "works in the finance team", "always wants dollar amounts rounded to
+2 decimals", "prefers short answers without lengthy caveats").
+
+Be conservative here. On most turns the right answer is nothing at all - that is the normal,
+expected outcome, not a failure to find something. Only extract a fact when the user has clearly
+stated it, or unmistakably implied something general about how they always want things done -
+never when you're merely inferring a "preference" from the one specific choice they made in this
+one turn's specific context.
+
+In particular: what chart type, column, file, or analysis the user asked for IN THIS TURN is a
+one-off task detail, not a preference, even if it resembles one on the surface. "Show a bar chart
+of sales by region" tells you nothing about what they'd want for a totally different question
+next week - do not record it as "prefers bar charts" or anything similar. Only record a
+chart/format preference if the user says something explicitly general, like "I always want bar
+charts" or "from now on, round to 2 decimals" - never infer generality from a single instance.
 
 {fold_section}
 
@@ -26,8 +57,10 @@ Reply in exactly this format, both section headers always present:
 {summary_instruction}
 
 {preferences_marker}
-One durable user fact/preference per line, extracted ONLY from the latest turn above. If there's
-nothing new, write the single word None."""
+One durable user fact/preference per line, extracted ONLY from the latest turn above, and ONLY if
+it's clearly general/lasting per the rules above - not a detail specific to this one question.
+When in doubt, leave it out. If there's nothing new (the common case), write the single word
+None."""
 
 _NO_FOLD_SECTION = (
     "Nothing needs folding into the summary this time - the raw recent-turns window still "
@@ -91,3 +124,50 @@ async def analyze_turn(
     )
     raw = (await ask_llm_async(client, prompt)).strip()
     return _parse_response(raw, fallback_summary)
+
+
+def estimate_tokens(text: str) -> int:
+    return max(1, len(text or "") // 4)
+
+
+def estimate_thread_context_tokens(summary: str, recent_turns: list[dict], query: str = "") -> int:
+    total = estimate_tokens(summary) + estimate_tokens(query)
+    for turn in recent_turns or []:
+        total += estimate_tokens(turn.get("query", "")) + estimate_tokens(turn.get("response", ""))
+    return total
+
+
+def token_budget() -> int:
+    raw = get_settings().get("MEMORY_TOKEN_BUDGET")
+    try:
+        return int(raw) if raw else DEFAULT_TOKEN_BUDGET
+    except (TypeError, ValueError):
+        return DEFAULT_TOKEN_BUDGET
+
+
+def should_prune(summary: str, recent_turns: list[dict], query: str = "") -> bool:
+    budget = token_budget()
+    used = estimate_thread_context_tokens(summary, recent_turns, query)
+    return len(recent_turns or []) > 1 and used >= budget * PRUNE_THRESHOLD_RATIO
+
+
+async def compress_context(previous_summary: str, recent_turns: list[dict]) -> tuple[str, list[dict]]:
+    if len(recent_turns or []) <= 1:
+        return previous_summary, recent_turns
+
+    turns_to_fold = recent_turns[:-1]
+    kept_turns = recent_turns[-1:]
+
+    model_config = get_model_config()
+    fallback_provider = get_settings().get("FALLBACK_LLM_PROVIDER", "groq")
+    client = LLMProvider(model_config["provider"], fallback_provider=fallback_provider).get_client(model_config["model"])
+
+    prompt = COMPRESSION_PROMPT.format(
+        previous_summary=previous_summary or "(none yet)",
+        fold_turns=_format_fold_turns(turns_to_fold),
+    )
+    try:
+        raw = (await ask_llm_async(client, prompt)).strip()
+    except Exception:
+        return previous_summary, kept_turns
+    return raw or previous_summary, kept_turns

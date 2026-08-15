@@ -99,8 +99,7 @@ class TabularAgent:
                     if type(event).__name__ == "TextMessage" and event.source == self.agent.name:
                         final_text = event.content
                     if on_event is not None:
-                        translated = self._translate_event(event)
-                        if translated:
+                        for translated in self._translate_event(event):
                             await on_event(translated)
 
                 if cancel_check is not None and await cancel_check():

@@ -10,8 +10,20 @@ CORE_TOOLS = [
     "invoke_tabular_agent",
     "invoke_document_agent",
     "invoke_document_processor",
+    # A cheap, always-available way to unlock a capability-gated tool (see CAPABILITY_TOOLS
+    # below) the moment the model realizes it needs one - e.g. right after seeing an agent's
+    # findings and deciding a report is warranted, with nothing else it needs to call at that
+    # exact moment to piggyback the request onto. See its docstring in
+    # tools/orchestrator/orchestrator_tools.py and OrchestratorTools.request_capabilities.
+    "request_capabilities",
 ]
 
+# Deliverable tools kept out of CORE_TOOLS so their (fairly long) descriptions don't ride along
+# on every single turn's prompt - exposed only once the model requests the matching capability,
+# either by piggybacking `next_capabilities` onto a real tool call it's already making (e.g.
+# invoke_tabular_agent), or via the standalone request_capabilities tool above when it has
+# nothing else to call at the moment it realizes it needs one. Either way, the capability is
+# available for exactly one call after being requested.
 CAPABILITY_TOOLS: dict[str, dict] = {
     "csv": {
         "tools": ["generate_csv"],

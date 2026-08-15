@@ -287,6 +287,19 @@ class OrchestratorTools:
         self.state.open_questions = [h.statement for h in result.hypotheses]
         return result
 
+    def request_capabilities(self) -> str:
+        """Unlock capability-gated tools (e.g. generate_csv, generate_report) for your VERY NEXT
+        call. Call this the moment you realize you need one - even if that's only after seeing
+        an agent's findings partway through the investigation, you do NOT need to have predicted
+        this in advance. This tool does nothing by itself (no analysis, no file produced): set
+        the `next_capabilities` parameter below (every tool call accepts it) to the capability
+        name(s) you need, e.g. next_capabilities=["report"], call this tool with just that, then
+        make the actual generate_report/generate_csv call on your very next turn."""
+        return (
+            "Noted - whatever you passed in next_capabilities is unlocked for your very next "
+            "tool call only. Make that call now."
+        )
+
     def generate_csv(self, file_id: str, name: Optional[str] = None) -> str:
         """Create a CSV from an existing data artifact.
 
