@@ -313,4 +313,6 @@ class OrchestratorAgent:
         "request_capabilities": "Preparing to generate a file",
     }
 
-    _translate_event = staticmethod(make_tool_event_translator(_FRIENDLY_TOOL_NAMES))
+    _translate_event = staticmethod(
+        make_tool_event_translator(_FRIENDLY_TOOL_NAMES, include_result_status=True)
+    )
