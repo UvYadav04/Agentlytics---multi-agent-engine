@@ -1,5 +1,6 @@
 import uuid
 
+from ingestion.errors import is_size_related_error
 from ingestion.file_types.base import BaseIngestor
 from ingestion.file_types.pdf.chunker import BaseChunker, DoclingChunker
 from ingestion.file_types.txt.utils import convert_document
@@ -49,7 +50,18 @@ class TXTIngestor(BaseIngestor):
             ]
 
             if chunk_records:
-                self.vector_store.upsert(chunk_records)
+                try:
+                    self.vector_store.upsert(chunk_records)
+                except Exception as exc:
+                    return IngestionResult(
+                        file_id=file_id,
+                        workspace_id=workspace_id,
+                        status="failed",
+                        output_ref="",
+                        schema_summary={},
+                        errors=[f"Failed to index in the vector store: {exc}"],
+                        error_kind="vector_store_size_exceeded" if is_size_related_error(exc) else None,
+                    )
 
             status = "success" if not errors else "partial"
 

@@ -3,12 +3,19 @@ import uuid
 
 import pypdf
 
+from ingestion.errors import is_size_related_error
 from ingestion.file_types.base import BaseIngestor
 from ingestion.file_types.pdf.chunker import BaseChunker, DoclingChunker
 from ingestion.file_types.pdf.llamaparse_client import parse_pdf_pages
 from ingestion.file_types.pdf.utils import extract_tables, is_scanned
 from ingestion.models import IngestionResult
 from vectordb.schema import ChunkRecord
+
+# Kept in sync with Client/src/components/chat/UploadModal.tsx's MAX_PDF_PAGES - the client check
+# is what most users see, this is the server-side backstop for anything that reaches ingestion
+# anyway (API calls, a stale client, etc.) and also keeps oversized PDFs from ever reaching the
+# vector_store.upsert call below, which is what a page count this high tends to blow up.
+MAX_PDF_PAGES = 30
 
 
 class PDFIngestor(BaseIngestor):
@@ -29,8 +36,12 @@ class PDFIngestor(BaseIngestor):
             return False
         try:
             reader = pypdf.PdfReader(file_path)
-            if len(reader.pages) == 0:
+            page_count = len(reader.pages)
+            if page_count == 0:
                 self.errors = ["PDF has 0 pages"]
+                return False
+            if page_count > MAX_PDF_PAGES:
+                self.errors = [f"PDF has {page_count} pages - exceeds the {MAX_PDF_PAGES}-page limit"]
                 return False
             self.errors = []
             return True
@@ -78,7 +89,18 @@ class PDFIngestor(BaseIngestor):
 
             all_records = chunk_records + table_chunk_records
             if all_records:
-                self.vector_store.upsert(all_records)
+                try:
+                    self.vector_store.upsert(all_records)
+                except Exception as exc:
+                    return IngestionResult(
+                        file_id=file_id,
+                        workspace_id=workspace_id,
+                        status="failed",
+                        output_ref="",
+                        schema_summary={},
+                        errors=[f"Failed to index in the vector store: {exc}"],
+                        error_kind="vector_store_size_exceeded" if is_size_related_error(exc) else None,
+                    )
 
             status = "success" if not errors else "partial"
 

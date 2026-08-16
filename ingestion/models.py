@@ -15,3 +15,4 @@ class IngestionResult:
     chunk_count: Optional[int] = None
     extracted_tables: list = field(default_factory=list)
     errors: list = field(default_factory=list)
+    error_kind: Optional[str] = None

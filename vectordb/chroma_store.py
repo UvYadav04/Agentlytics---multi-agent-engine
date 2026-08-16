@@ -72,12 +72,11 @@ class ChromaVectorStore(BaseVectorStore):
         return chunks
 
     def delete(self, ids: list) -> None:
-        start = time.perf_counter()
-        all_ids = self.collection.get().get("ids")
-        if not all_ids:
+        if not ids:
             return
-        self.collection.delete(ids=all_ids)
-        logger.info("chroma delete took %.3fs (%d ids)", time.perf_counter() - start, len(all_ids))
+        start = time.perf_counter()
+        self.collection.delete(ids=ids)
+        logger.info("chroma delete took %.3fs (%d ids)", time.perf_counter() - start, len(ids))
 
     def _to_chunks(self, result: dict, batched: bool) -> list:
         ids = result["ids"][0] if batched else result["ids"]
