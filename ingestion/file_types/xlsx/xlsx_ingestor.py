@@ -1,4 +1,5 @@
 import os
+from typing import Callable, Optional
 
 from ingestion.file_types.base import BaseIngestor, infer_dtypes
 from ingestion.file_types.xlsx.utils import detect_tables, load_sheets
@@ -46,7 +47,10 @@ class XLSXIngestor(BaseIngestor):
             "tables": tables_meta,
         }
 
-    def ingest(self, file_path: str, workspace_id: str, file_id: str) -> IngestionResult:
+    def ingest(
+        self, file_path: str, workspace_id: str, file_id: str,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+    ) -> IngestionResult:
         try:
             if self.storage is None:
                 raise RuntimeError("no storage backend provided")

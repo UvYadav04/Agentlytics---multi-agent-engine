@@ -1,5 +1,6 @@
 import os
 import uuid
+from typing import Callable, Optional
 
 import pypdf
 
@@ -54,13 +55,17 @@ class PDFIngestor(BaseIngestor):
         scanned = all(is_scanned(page_doc) for _, page_doc in pages) if pages else True
         return {"page_count": len(pages), "is_scanned": scanned}
 
-    def ingest(self, file_path: str, workspace_id: str, file_id: str) -> IngestionResult:
+    def ingest(
+        self, file_path: str, workspace_id: str, file_id: str,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+    ) -> IngestionResult:
         try:
             if self.vector_store is None:
                 raise RuntimeError("no vector store provided")
 
             pages, errors = self._pages_cached(file_path)
             errors = list(errors)
+            total_pages = len(pages)
 
             chunk_records = []
             extracted_tables = []
@@ -68,7 +73,16 @@ class PDFIngestor(BaseIngestor):
             chunk_index = 0
             table_index = 0
 
-            for page_no, page_doc in pages:
+            if progress_callback and total_pages:
+                # Fires once up front with done=0 so the client learns pages_total (and that
+                # ingestion has actually started) before the first page finishes chunking -
+                # otherwise a slow first page would show no progress bar at all for a while.
+                try:
+                    progress_callback(0, total_pages)
+                except Exception:
+                    pass
+
+            for pages_done, (page_no, page_doc) in enumerate(pages, start=1):
                 page_chunks = self.chunker.chunk_document(page_doc)
                 for chunk in page_chunks:
                     chunk_records.append(ChunkRecord(
@@ -86,6 +100,12 @@ class PDFIngestor(BaseIngestor):
                 table_index += page_candidate_count
                 extracted_tables.extend(page_tables)
                 table_chunk_records.extend(page_table_records)
+
+                if progress_callback:
+                    try:
+                        progress_callback(pages_done, total_pages)
+                    except Exception:
+                        pass
 
             all_records = chunk_records + table_chunk_records
             if all_records:

@@ -1,4 +1,5 @@
 import logging
+from typing import Callable, Optional
 
 from ingestion import registry
 from ingestion.models import IngestionResult
@@ -13,7 +14,10 @@ class IngestionManager:
         self.storage = storage
         self.vector_store = vector_store
 
-    def ingest_file(self, file_path: str, workspace_id: str, file_id: str) -> IngestionResult:
+    def ingest_file(
+        self, file_path: str, workspace_id: str, file_id: str,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+    ) -> IngestionResult:
         try:
             ingestor_cls = registry.get_ingestor_for(file_path)
         except ValueError as exc:
@@ -47,7 +51,7 @@ class IngestionManager:
         # File doc stuck at status="processing" forever instead of ever being marked failed. This
         # keeps ingest_file's contract ("never raises, always returns an IngestionResult") honest.
         try:
-            return ingestor.ingest(file_path, workspace_id, file_id)
+            return ingestor.ingest(file_path, workspace_id, file_id, progress_callback=progress_callback)
         except Exception as exc:
             logger.exception("ingest_file: %s ingestor raised for file %s", ingestor_cls.__name__, file_id)
             return IngestionResult(

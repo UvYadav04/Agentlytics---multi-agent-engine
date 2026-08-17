@@ -1,6 +1,6 @@
 import os
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Callable, Optional
 
 import pandas as pd
 
@@ -32,7 +32,15 @@ class BaseIngestor(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def ingest(self, file_path: str, workspace_id: str, file_id: str) -> IngestionResult:
+    def ingest(
+        self, file_path: str, workspace_id: str, file_id: str,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+    ) -> IngestionResult:
+        # progress_callback(done, total) - only meaningful for ingestors that process a file in
+        # discrete, reportable steps (currently just PDFIngestor, one call per page). Every other
+        # ingestor accepts and ignores it - it's a single pandas/docling call with nothing useful
+        # to report mid-way, so there's no "26%" to give the user that isn't already implied by
+        # status="processing".
         raise NotImplementedError
 
 
@@ -63,7 +71,10 @@ class SingleTableIngestor(BaseIngestor):
             **self._metadata_extra(file_path),
         }
 
-    def ingest(self, file_path: str, workspace_id: str, file_id: str) -> IngestionResult:
+    def ingest(
+        self, file_path: str, workspace_id: str, file_id: str,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+    ) -> IngestionResult:
         try:
             df = self._postprocess(self._read_dataframe(file_path))
 

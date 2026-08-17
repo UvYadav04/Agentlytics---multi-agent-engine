@@ -1,4 +1,5 @@
 import uuid
+from typing import Callable, Optional
 
 from ingestion.errors import is_size_related_error
 from ingestion.file_types.base import BaseIngestor
@@ -30,7 +31,10 @@ class TXTIngestor(BaseIngestor):
         document, _ = convert_document(file_path)
         return {"char_count": len(document.export_to_text())}
 
-    def ingest(self, file_path: str, workspace_id: str, file_id: str) -> IngestionResult:
+    def ingest(
+        self, file_path: str, workspace_id: str, file_id: str,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+    ) -> IngestionResult:
         try:
             document, errors = convert_document(file_path)
 
