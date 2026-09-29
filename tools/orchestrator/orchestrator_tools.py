@@ -6,6 +6,7 @@ from rapidfuzz import fuzz
 from agents.document import DocumentAgent
 from agents.tabular import TabularAgent
 from tools.ask_user import AskUserMixin
+from tools.dashboard.live_tool import LiveDashboardMixin
 from sandbox.path_resolver import InvalidArtifactIdError, get_parquet_path, validate_segment
 from tools.hypothesis.hypothesis_tools import HypothesisTools
 from tools.hypothesis.models import HypothesisResult
@@ -29,7 +30,7 @@ def _looks_like_file_id(ref: str) -> bool:
         return False
 
 
-class OrchestratorTools(AskUserMixin):
+class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
     def __init__(
         self, catalog, state, vector_store=None, reranker=None, memory=None, storage=None,
         reports_dir: str = "data/reports", chat_id: str = "default", sandbox_manager=None,

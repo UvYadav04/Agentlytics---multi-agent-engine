@@ -113,7 +113,7 @@ class OrchestratorAgent:
     def __init__(
         self, catalog, vector_store=None, reranker=None, memory=None, storage=None,
         reports_dir: str = "data/reports", chat_id: str = "default", sandbox_manager=None,
-        result_collector: FinalResultCollector = None, chart_capacity_checker=None,
+        result_collector: FinalResultCollector = None, chart_capacity_checker=None, database_access=None,
     ):
         self.logger = get_agent_logger("orchestrator_agent")
         model_config = get_model_config()
@@ -126,6 +126,7 @@ class OrchestratorAgent:
             result_collector=result_collector or FinalResultCollector(),
             chart_capacity_checker=chart_capacity_checker,
         )
+        self.tools.database_access = database_access
         self.model_client = client
 
         self._capability_holder = _CapabilityHolder()
@@ -143,6 +144,7 @@ class OrchestratorAgent:
         on_event=None,
         cancel_check=None,
         ask_user=None,
+        database_connections: list = None,
     ) -> OrchestratorResult:
         constraints = constraints or {}
         self.tools.workspace_id = workspace_id
@@ -154,6 +156,7 @@ class OrchestratorAgent:
         self.tools.on_event = on_event
         self.tools.cancel_check = cancel_check
         self.tools.ask_user_callback = ask_user
+        self.tools.database_connections = database_connections or []
 
         task = (
             f"Objective: {objective}\n"
@@ -287,6 +290,19 @@ class OrchestratorAgent:
                     "list_files/search_files if you need to see them."
                 )
 
+        connections = self.tools.database_connections or []
+        if connections:
+            lines.append("Connected databases (live; use build_live_dashboard for real-time dashboards):")
+            for c in connections:
+                objects = c.get("objects") or []
+                shown = ", ".join(objects[:max_columns])
+                if len(objects) > max_columns:
+                    shown += f", ... (+{len(objects) - max_columns} more)"
+                lines.append(
+                    f"- {c['name']} [connection_id={c['connection_id']}, type={c['db_type']}, "
+                    f"database={c.get('database') or 'multiple'}] tables: {shown or 'unknown'}"
+                )
+
         return "\n".join(lines)
 
     _FRIENDLY_TOOL_NAMES = {
@@ -306,6 +322,7 @@ class OrchestratorAgent:
         "recall_user_info": "Recalling saved preferences",
         "request_capabilities": "Preparing to generate a file",
         "ask_user": "Asking you a question",
+        "build_live_dashboard": "Building a live dashboard",
     }
 
     _translate_event = staticmethod(
