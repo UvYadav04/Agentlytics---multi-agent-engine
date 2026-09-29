@@ -625,9 +625,6 @@ Chart.defaults.plugins.tooltip.titleFont = {{ weight: '600' }};
         y_label = section.get("y_label")
         x_title = f'{{ display: true, text: {json.dumps(x_label)}, color: "#A39E92", font: {{ weight: "600" }} }}' if x_label else '{ display: false }'
         y_title = f'{{ display: true, text: {json.dumps(y_label)}, color: "#A39E92", font: {{ weight: "600" }} }}' if y_label else '{ display: false }'
-        # Pie/doughnut have no cartesian scales - Chart.js ignores the `scales` option for them,
-        # but the legend still needs to be on (it's the only thing labeling each slice) even
-        # though there's only ever one dataset (multi would otherwise hide it).
         show_legend = multi or is_pie
         scales_config = "{}" if is_pie else f"""{{
         x: {{ title: {x_title}, grid: {{ display: false }}, ticks: {{ maxRotation: 40, minRotation: 0 }} }},

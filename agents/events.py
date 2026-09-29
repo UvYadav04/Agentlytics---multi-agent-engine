@@ -28,13 +28,6 @@ def make_tool_event_translator(friendly_names: dict[str, str], *, include_result
             any_error = any(getattr(res, "is_error", False) for res in event.content)
             message = "; ".join(_label(n) for n in names)
             events = [{"type": "tool_error" if any_error else "tool_result", "message": message}]
-            # Only the Orchestrator gets the extra status row below - it's the one whose tool
-            # results (an entire sub-agent run, a file export, a report write) can take long
-            # enough after returning that the trail looks frozen while it decides its next move.
-            # Sub-agents (Tabular/Document) already have their own "Assigning an agent"/"Executing
-            # a Python script" rows covering that same gap one level up, so adding this here too
-            # just repeats the same message several times per investigation - see
-            # orchestrator/agent.py and tabular|document/agent.py's _translate_event wiring.
             if include_result_status:
                 events.append({
                     "type": "status",

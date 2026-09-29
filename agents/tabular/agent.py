@@ -32,9 +32,6 @@ class TabularAgent:
             reports_dir=reports_dir, chart_capacity_checker=chart_capacity_checker,
         )
         model_config = get_model_config()
-        # Matches OrchestratorAgent/DocumentAgent (see agents/document/agent.py) - previously
-        # TabularAgent had no failover, so a fully-down primary provider had no recovery path
-        # during tabular analysis even though the other two agent types did.
         fallback_provider = get_settings().get("FALLBACK_LLM_PROVIDER", "groq")
         client = LLMProvider(
             model_config["provider"], fallback_provider=fallback_provider,
@@ -47,6 +44,7 @@ class TabularAgent:
                 self.tools.list_allowed_files,
                 self.tools.run_python,
                 self.tools.create_visualizations,
+                self.tools.ask_user,
             ],
             system_message=get_system_message(direct_route),
             reflect_on_tool_use=False,
@@ -57,13 +55,14 @@ class TabularAgent:
 
     async def run(
         self, objective: str, constraints: dict = None, on_event=None, thread_context: dict = None,
-        cancel_check=None,
+        cancel_check=None, ask_user=None,
     ) -> TabularFindings:
         await self.agent.on_reset(CancellationToken())
         self.last_transform_script = None
         self.last_transform_file_ids = []
         self.tools.saved_artifacts = {}
         self.tools.charts_created = []
+        self.tools.ask_user_callback = ask_user
 
         constraints = constraints or {}
         allowed_files = self.tools.list_allowed_files()
@@ -81,11 +80,6 @@ class TabularAgent:
         tool_timer = ToolCallTimer(self.logger)
         transcript = []
         final_text = ""
-        # Checked after every streamed event, same as OrchestratorAgent.run() - without this, a
-        # cancel request made while this agent is mid-way through several run_python/
-        # create_visualizations tool calls (max_tool_iterations=10) had no effect until the whole
-        # nested run finished on its own, since the orchestrator's own cancel_check only fires
-        # again once invoke_tabular_agent's single tool call returns.
         stream = self.agent.run_stream(task=task)
         try:
             async for event in stream:
@@ -183,6 +177,7 @@ class TabularAgent:
         "list_allowed_files": "Listing files",
         "run_python": "Executing a Python script",
         "create_visualizations": "Generating visualizations",
+        "ask_user": "Asking you a question",
     }
 
     _translate_event = staticmethod(make_tool_event_translator(_FRIENDLY_TOOL_NAMES))

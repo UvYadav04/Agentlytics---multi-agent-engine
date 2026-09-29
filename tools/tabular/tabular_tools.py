@@ -3,6 +3,7 @@ import time
 from typing import Optional
 
 from sandbox.path_resolver import new_artifact_id
+from tools.ask_user import AskUserMixin
 from tools.reporting.models import ChartSpec
 from tools.reporting.reporting_tools import ReportingTools
 from tools.tabular.duckdb_utils import connect, register_view, run_query
@@ -20,13 +21,14 @@ from tools.tabular.sandbox_executor import PythonSandbox, SandboxExecutionError
 logger = logging.getLogger("tools.tabular")
 
 
-class TabularTools:
+class TabularTools(AskUserMixin):
     def __init__(
         self, assigned_files: list, storage=None, workspace_id: str = "default",
         chat_id: str = "default", sandbox_manager=None, reports_dir: str = "data/reports",
         chart_capacity_checker=None,
     ):
         self.assigned_files = {f.file_id: f for f in assigned_files}
+        self.ask_user_source = "tabular_agent"
         self.con = connect()
         self.storage = storage
         self.workspace_id = workspace_id

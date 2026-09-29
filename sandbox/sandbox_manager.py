@@ -85,8 +85,7 @@ class SandboxManagerError(RuntimeError):
 
 
 class SandboxPoolExhausted(SandboxManagerError):
-    """Raised when no idle sandbox is available, the pool is already at max_size, and no
-    sandbox became free before the acquire timeout elapsed."""
+    pass
 
 
 IDLE = "idle"
@@ -107,7 +106,7 @@ class _SandboxHandle:
         self.created_at = time.time()
         self.last_used_at = self.created_at
         self.execution_count = 0
-        self.state = BUSY  # handles are only ever handed out already-busy; see _create_sandbox callers
+        self.state = BUSY
 
     @property
     def uptime_s(self) -> float:
@@ -216,7 +215,7 @@ class SandboxManager:
 
         self._idle: dict[str, _SandboxHandle] = {}
         self._busy: dict[str, _SandboxHandle] = {}
-        self._pending = 0  # containers currently mid-creation; counted against max_size
+        self._pending = 0
         self._lock = threading.RLock()
         self._not_empty = threading.Condition(self._lock)
         self._client = None
@@ -279,11 +278,9 @@ class SandboxManager:
 
 
     def _total_locked(self) -> int:
-        """Caller must hold self._lock."""
         return len(self._idle) + len(self._busy) + self._pending
 
     def _publish_gauges_locked(self) -> None:
-        """Caller must hold self._lock."""
         if not _PROMETHEUS_AVAILABLE:
             return
         _POOL_IDLE.set(len(self._idle))
@@ -539,7 +536,6 @@ class SandboxManager:
             logger.warning("sandbox creation: id=%s failed to become healthy - removing it", sandbox_id)
             try:
                 container.remove(force=True)
-                # container.stop()
             except Exception:
                 pass
             raise
@@ -678,7 +674,6 @@ class SandboxManager:
             logger.debug("health check failed for sandbox=%s: %s", handle.sandbox_id, exc)
             return False
 
-    # -------------------------------------------------------------------------- metrics ----
 
     def get_metrics(self) -> dict:
         with self._lock:
@@ -697,7 +692,6 @@ class SandboxManager:
         with self._lock:
             return [h.snapshot() for h in list(self._idle.values()) + list(self._busy.values())]
 
-    # -------------------------------------------------------------------------- shutdown ----
 
     def shutdown_all(self) -> None:
         self._reaper_stop.set()

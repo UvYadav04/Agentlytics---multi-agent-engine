@@ -2,6 +2,7 @@ import logging
 import time
 
 from llm_provider import LLMProvider
+from tools.ask_user import AskUserMixin
 from tools.document.models import (
     ChunkResult,
     ComparisonResult,
@@ -32,9 +33,10 @@ line, nothing else.
 """
 
 
-class DocumentTools:
+class DocumentTools(AskUserMixin):
     def __init__(self, assigned_files: list, vector_store, reranker=None, llm_provider=None):
         self.assigned_file_ids = [f.file_id for f in assigned_files]
+        self.ask_user_source = "document_agent"
         self.vector_store = vector_store
         self.reranker = reranker
         self.llm_provider = llm_provider or LLMProvider()

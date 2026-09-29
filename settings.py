@@ -7,9 +7,6 @@ def _is_production() -> bool:
     return os.environ.get("ENV", "").strip().lower() == "production"
 
 
-# In production all services run in a single container and every variable is injected directly
-# into the environment (no .env files shipped), so skip loading one there and rely on
-# os.environ only.
 if not _is_production():
     load_dotenv()
 

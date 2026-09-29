@@ -1,20 +1,3 @@
-"""LLM-driven markdown report composer, used by ReportingTools.generate_report.
-
-Given a title/objective and a `context` string, this asks a model to write one well-structured,
-substantial markdown report and hands back the raw text. ReportingTools still owns writing it to
-disk (see generate_report there); this module only composes the content.
-
-`context` is not just the orchestrator's own short write-up - tools/orchestrator/
-orchestrator_tools.py's generate_report auto-appends the full InvestigationState trace (every
-tool call and finding made during the investigation) before calling compose_report_markdown, so
-the model here typically has the complete raw material for the investigation to draw from, not a
-compressed summary of it - hence the length/detail expectations in _SYSTEM_PROMPT below.
-
-Deliberately NOT given any tools or data access of its own: it only has what's in `context`, by
-design - the orchestrator/investigation trace is the one holding the real findings, and this call
-is instructed to work only from what it's given rather than inventing numbers to make a
-"complete-looking" report.
-"""
 from __future__ import annotations
 
 import logging
@@ -104,9 +87,6 @@ def get_model_config() -> dict:
 async def compose_report_markdown(
     title: str, objective: str, context: str, llm_provider: LLMProvider = None, model: str = None,
 ) -> tuple[str, bool]:
-    """Returns (markdown_text, ok). ok=False means the LLM call failed, came back empty, or
-    raised - callers (ReportingTools.generate_report) should fall back to a deterministic
-    template rather than surface a broken/empty report to the user."""
     if llm_provider is None:
         model_config = get_model_config()
         llm_provider = LLMProvider(model_config["provider"])

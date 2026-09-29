@@ -5,6 +5,7 @@ from rapidfuzz import fuzz
 
 from agents.document import DocumentAgent
 from agents.tabular import TabularAgent
+from tools.ask_user import AskUserMixin
 from sandbox.path_resolver import InvalidArtifactIdError, get_parquet_path, validate_segment
 from tools.hypothesis.hypothesis_tools import HypothesisTools
 from tools.hypothesis.models import HypothesisResult
@@ -28,7 +29,7 @@ def _looks_like_file_id(ref: str) -> bool:
         return False
 
 
-class OrchestratorTools:
+class OrchestratorTools(AskUserMixin):
     def __init__(
         self, catalog, state, vector_store=None, reranker=None, memory=None, storage=None,
         reports_dir: str = "data/reports", chat_id: str = "default", sandbox_manager=None,
@@ -49,10 +50,8 @@ class OrchestratorTools:
         self.reporting = ReportingTools(storage, output_dir=reports_dir) if storage else None
         self.reports_dir = reports_dir
         self.on_event = None
-        # Set alongside on_event in OrchestratorAgent.run() - threaded down into
-        # invoke_tabular_agent/invoke_document_agent so a cancel request takes effect while one
-        # of those nested agent loops is mid-flight, not only once it returns.
         self.cancel_check = None
+        self.ask_user_source = "orchestrator"
         self._last_transform_script: Optional[str] = None
         self._last_tabular_file_ids: list = []
 
@@ -184,6 +183,7 @@ class OrchestratorTools:
 
         result = await agent.run(
             effective_objective, constraints, on_event=self.on_event, cancel_check=self.cancel_check,
+            ask_user=self.ask_user_callback,
         )
 
         if agent.last_transform_script:
@@ -226,7 +226,7 @@ class OrchestratorTools:
         agent = DocumentAgent(assigned_files, vector_store=vector_store, reranker=self._get_reranker())
         result = await agent.run(
             objective, constraints, on_event=self.on_event, metadata_brief=metadata_brief,
-            cancel_check=self.cancel_check,
+            cancel_check=self.cancel_check, ask_user=self.ask_user_callback,
         )
         self.result_collector.add_document_findings(
             result, "invoke_document_agent", [f.file_id for f in assigned_files],
@@ -352,10 +352,6 @@ class OrchestratorTools:
         Returns the generated file path - report it in your final answer and in artifact_refs."""
         if self.reporting is None:
             raise RuntimeError("no storage configured, cannot generate files")
-        # Auto-attach the full raw investigation trace (every tool call/finding this session) on
-        # top of the orchestrator's own short `context`, so the LLM report writer always has the
-        # complete underlying data rather than depending on how much the orchestrator chose to
-        # transcribe into `context` itself - see report_writer.py's module docstring.
         investigation_trace = self.state.summary() if self.state is not None else ""
         full_context = context
         if investigation_trace:

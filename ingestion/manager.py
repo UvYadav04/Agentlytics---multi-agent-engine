@@ -43,13 +43,6 @@ class IngestionManager:
                 errors=errors,
             )
 
-        # Unlike the two branches above, ingestor.ingest() itself isn't guaranteed to always
-        # return cleanly - a corrupt file, an out-of-memory condition on an oversized PDF/txt, or
-        # any other unhandled exception deep in a specific ingestor previously propagated straight
-        # out of ingest_file(), past run_ingestion's own try/except (which only wraps the
-        # download + this call together, not this call's internals specifically), and left the
-        # File doc stuck at status="processing" forever instead of ever being marked failed. This
-        # keeps ingest_file's contract ("never raises, always returns an IngestionResult") honest.
         try:
             return ingestor.ingest(file_path, workspace_id, file_id, progress_callback=progress_callback)
         except Exception as exc:

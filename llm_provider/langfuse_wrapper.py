@@ -249,8 +249,6 @@ class LangfuseTracedChatCompletionClient(ChatCompletionClient):
                 elapsed * 1000, {"provider": self._provider_name, "model": self._model or "default", "outcome": "ok"},
             )
             if generation is not None:
-                # autogen's create_stream yields str chunks and finishes with a CreateResult -
-                # that final chunk is the only one with usage/content worth recording.
                 generation.update(
                     output=getattr(last_chunk, "content", last_chunk),
                     usage_details=(

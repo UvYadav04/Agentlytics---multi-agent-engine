@@ -1,3 +1,4 @@
+from agents.ask_user import ASK_USER_INSTRUCTION
 from agents.final_answer import FOLLOW_UP_INSTRUCTION
 from agents.no_internal_ids import NO_INTERNAL_IDS_INSTRUCTION
 from config import get_settings
@@ -27,7 +28,7 @@ get_file_overview/list_file_sections/list_tables; start on the actual objective 
 Finish with ONE plain-language reply: state the answer directly, backed only by evidence a tool
 actually returned. No JSON, no tool narration - the orchestrator reformats this into the final
 answer.
-""" + NO_INTERNAL_IDS_INSTRUCTION
+""" + NO_INTERNAL_IDS_INSTRUCTION + ASK_USER_INSTRUCTION
 
 DIRECT_SYSTEM_MESSAGE = f"""
 You are the Document Agent, answering a document question directly - there is no orchestrator
@@ -40,7 +41,7 @@ actually relevant before answering, rather than assuming.
 Finish with ONE complete, natural answer - this is shown to the user exactly as written. State
 the answer directly, backed only by evidence a tool actually returned. No JSON, no tool
 narration.
-""" + NO_INTERNAL_IDS_INSTRUCTION + FOLLOW_UP_INSTRUCTION
+""" + NO_INTERNAL_IDS_INSTRUCTION + ASK_USER_INSTRUCTION + FOLLOW_UP_INSTRUCTION
 
 
 def get_system_message(direct_route: bool = False) -> str:

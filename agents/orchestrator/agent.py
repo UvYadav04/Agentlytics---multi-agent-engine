@@ -34,7 +34,7 @@ _tool_duration = _meter.create_histogram(
 try:
     from opentelemetry.trace import Status, StatusCode
     _ERROR_STATUS = Status(StatusCode.ERROR)
-except ImportError:  # pragma: no cover - opentelemetry-api is always a transitive dep, defend anyway
+except ImportError:  # pragma: no cover
     _ERROR_STATUS = None
 
 
@@ -60,10 +60,6 @@ def _wrap_with_next_capabilities(func, holder: "_CapabilityHolder"):
     if inspect.iscoroutinefunction(func):
         async def wrapper(**kwargs):
             holder.value = list(kwargs.pop("next_capabilities", None) or [])
-            # One span per orchestrator tool call - covers every registered tool (tool
-            # selection/execution: invoke_tabular_agent, invoke_document_agent, generate_report,
-            # rag/retrieval tools, run_python, etc.) from a single instrumentation point rather
-            # than hand-wrapping each tool method individually.
             t0 = time.monotonic()
             outcome = "ok"
             with _tracer.start_as_current_span(f"tool.{tool_name}") as span:
@@ -146,6 +142,7 @@ class OrchestratorAgent:
         thread_context: dict = None,
         on_event=None,
         cancel_check=None,
+        ask_user=None,
     ) -> OrchestratorResult:
         constraints = constraints or {}
         self.tools.workspace_id = workspace_id
@@ -156,6 +153,7 @@ class OrchestratorAgent:
         )
         self.tools.on_event = on_event
         self.tools.cancel_check = cancel_check
+        self.tools.ask_user_callback = ask_user
 
         task = (
             f"Objective: {objective}\n"
@@ -174,10 +172,6 @@ class OrchestratorAgent:
         active_capabilities: list[str] = []
         next_task = task
 
-        # "Planner execution" span - the outer iteration loop is the orchestrator's own
-        # plan/act/observe cycle (each iteration re-plans which tools to expose next based on
-        # next_capabilities). Wraps the whole loop so it shows as one workflow-level span with
-        # every tool-call span (see agent.py's _wrap_with_next_capabilities) nested underneath.
         with _tracer.start_as_current_span(
             "orchestrator.planner_loop", attributes={"objective.chars": len(objective)},
         ) as planner_span:
@@ -311,6 +305,7 @@ class OrchestratorAgent:
         "get_current_date": "Checking today's date",
         "recall_user_info": "Recalling saved preferences",
         "request_capabilities": "Preparing to generate a file",
+        "ask_user": "Asking you a question",
     }
 
     _translate_event = staticmethod(

@@ -33,15 +33,10 @@ class ExecutionEngine:
         self.executions = 0
         self.resets = 0
         self._healthy = True
-        # Threads alive when this (long-lived, one-per-pooled-container) engine was created -
-        # i.e. uvicorn/asyncio's own worker threads. Anything alive at reset() time that isn't
-        # in this set was spawned by exec()'d user code and didn't clean up after itself.
         self._baseline_thread_idents = {t.ident for t in threading.enumerate()}
 
     @property
     def healthy(self) -> bool:
-        """Whether the last execute()/reset() cycle left the sandbox in a state a pool
-        manager should trust for the next caller. False means: discard this container."""
         return self._healthy
 
     @staticmethod
@@ -136,12 +131,6 @@ class ExecutionEngine:
                 error = traceback.format_exc()[-2000:]
             timings["exec_ms"] = _ms(t_exec)
         finally:
-            # The namespace/dfs/duckdb-connection above are already fresh per call and go out
-            # of scope when execute() returns, so they can't leak into the *next* execution on
-            # their own - but the DuckDB connection is a real OS-level resource (file
-            # descriptors, worker threads) that needs an explicit close rather than relying on
-            # __del__/GC timing, especially now that a container serves many calls over its
-            # lifetime instead of just one.
             try:
                 con.close()
             except Exception:
@@ -161,14 +150,6 @@ class ExecutionEngine:
         return result
 
     def reset(self) -> bool:
-        """Defensive cleanup run between pooled executions, before this sandbox is handed to
-        the next caller. execute() already builds a fresh namespace + DuckDB connection every
-        call, so this mainly catches what user code can leak *outside* that per-call scope:
-        background threads, child processes, matplotlib figures, and stray files under /tmp.
-
-        Returns False if the sandbox couldn't be fully cleaned - the pool manager treats that
-        as a signal to discard this container instead of reusing it.
-        """
         self.resets += 1
         ok = True
         ok &= self._join_leaked_threads()
@@ -231,19 +212,12 @@ class ExecutionEngine:
             logger.exception("reset: failed to reap multiprocessing children")
             ok = False
 
-        # Executed code can also shell out via subprocess/os.system without going through
-        # multiprocessing at all. On Linux (this container always is) /proc lets us find and
-        # kill anything still parented to this process without needing psutil.
         try:
             my_pid = os.getpid()
             for stat_path in glob.glob("/proc/[0-9]*/stat"):
                 try:
                     with open(stat_path) as f:
                         content = f.read()
-                    # Format: "pid (comm) state ppid ...". comm can itself contain spaces or
-                    # parens (e.g. a process renamed via setproctitle), so field-splitting the
-                    # whole line would misalign everything after it - split only on what comes
-                    # after the last ')' instead.
                     rest = content[content.rindex(")") + 1:].split()
                     ppid = int(rest[1])
                     if ppid != my_pid:

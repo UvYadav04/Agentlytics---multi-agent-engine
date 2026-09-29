@@ -1,3 +1,4 @@
+from agents.ask_user import ASK_USER_INSTRUCTION
 from agents.final_answer import FOLLOW_UP_INSTRUCTION
 from agents.no_internal_ids import NO_INTERNAL_IDS_INSTRUCTION
 from config import get_settings
@@ -25,7 +26,7 @@ You are the Tabular Agent, delegated one structured-data task by the orchestrato
 {_SHARED_RULES}
 Finish with ONE plain-language reply using the real computed values. No JSON, no tool narration -
 the orchestrator reformats this into the final answer, so a concise findings summary is enough.
-""" + NO_INTERNAL_IDS_INSTRUCTION
+""" + NO_INTERNAL_IDS_INSTRUCTION + ASK_USER_INSTRUCTION
 
 DIRECT_SYSTEM_MESSAGE = f"""
 You are the Tabular Agent, answering a structured-data question directly - there is no
@@ -38,7 +39,7 @@ assuming which file the question is about.
 Finish with ONE complete, natural answer using the real computed values - this is shown to the
 user exactly as written, so make it conversational, not a terse internal summary. No JSON, no
 tool narration.
-""" + NO_INTERNAL_IDS_INSTRUCTION + FOLLOW_UP_INSTRUCTION
+""" + NO_INTERNAL_IDS_INSTRUCTION + ASK_USER_INSTRUCTION + FOLLOW_UP_INSTRUCTION
 
 
 def get_system_message(direct_route: bool = False) -> str:

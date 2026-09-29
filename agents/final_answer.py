@@ -40,7 +40,7 @@ def split_follow_up_questions(text: str) -> tuple[str, list[str]]:
     questions: list[str] = []
     for line in tail.splitlines():
         line = line.strip()
-        line = re.sub(r"^[-*•\d.)\s]+", "", line)  # Remove bullets/numbers
+        line = re.sub(r"^[-*•\d.)\s]+", "", line)
         line = line.strip("\"'")
 
         if line and line not in questions:

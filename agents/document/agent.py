@@ -48,6 +48,7 @@ class DocumentAgent:
                 self.tools.list_tables,
                 self.tools.search_tables,
                 self.tools.get_table,
+                self.tools.ask_user,
             ],
             system_message=get_system_message(direct_route),
             reflect_on_tool_use=False,
@@ -56,10 +57,11 @@ class DocumentAgent:
 
     async def run(
         self, objective: str, constraints: dict = None, on_event=None, metadata_brief: str = None,
-        thread_context: dict = None, cancel_check=None,
+        thread_context: dict = None, cancel_check=None, ask_user=None,
     ) -> DocumentFindings:
 
         await self.agent.on_reset(CancellationToken())
+        self.tools.ask_user_callback = ask_user
 
         constraints = constraints or {}
         task = (
@@ -75,11 +77,6 @@ class DocumentAgent:
         tool_timer = ToolCallTimer(self.logger)
         transcript = []
         final_text = ""
-        # Checked after every streamed event, same as OrchestratorAgent.run() - without this, a
-        # cancel request made while this agent is mid-way through several search/verify tool
-        # calls (max_tool_iterations=10) had no effect until the whole nested run finished on its
-        # own, since the orchestrator's own cancel_check only fires again once
-        # invoke_document_agent's single tool call returns.
         stream = self.agent.run_stream(task=task)
         try:
             async for event in stream:
@@ -154,6 +151,7 @@ class DocumentAgent:
         "list_tables": "Listing tables",
         "search_tables": "Searching tables",
         "get_table": "Getting table metadata",
+        "ask_user": "Asking you a question",
     }
 
     _translate_event = staticmethod(make_tool_event_translator(_FRIENDLY_TOOL_NAMES))

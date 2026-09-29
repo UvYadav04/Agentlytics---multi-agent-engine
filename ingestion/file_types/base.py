@@ -36,11 +36,6 @@ class BaseIngestor(ABC):
         self, file_path: str, workspace_id: str, file_id: str,
         progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> IngestionResult:
-        # progress_callback(done, total) - only meaningful for ingestors that process a file in
-        # discrete, reportable steps (currently just PDFIngestor, one call per page). Every other
-        # ingestor accepts and ignores it - it's a single pandas/docling call with nothing useful
-        # to report mid-way, so there's no "26%" to give the user that isn't already implied by
-        # status="processing".
         raise NotImplementedError
 
 

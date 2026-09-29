@@ -159,12 +159,6 @@ class DocumentProcessor:
     async def run(self, objective: str, constraints: dict = None, on_event=None) -> DocumentFindings:
         run_start = time.perf_counter()
 
-        # Every tool_call emitted below MUST be followed by exactly one tool_result/tool_error,
-        # on every exit path (including early returns) - the frontend (InvestigationTrail.tsx)
-        # pairs them with a stack, so an unmatched tool_call leaves that row spinning forever
-        # even after the investigation has actually finished. DocumentAgent/TabularAgent don't
-        # have to worry about this - their tool events come straight from autogen's own paired
-        # call/result stream - but this pipeline crafts events by hand, so it's on us here.
         if on_event is not None:
             await on_event({"type": "tool_call", "message": "Reading the full document"})
 
@@ -199,10 +193,6 @@ class DocumentProcessor:
         )
 
         merged = merge_batch_outputs(batch_outputs)
-        # A batch returns {} for a failed LLM call or unparseable output (see _process_batch) -
-        # if every single one came back empty, nothing was actually read; anything less than
-        # that still counts as a completed (if partial) read, same "partial success still
-        # reports success" convention TabularTools.create_visualizations uses.
         reading_failed = bool(batches) and all(not output for output in batch_outputs)
 
         if on_event is not None:

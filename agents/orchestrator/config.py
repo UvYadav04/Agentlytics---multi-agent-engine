@@ -1,3 +1,4 @@
+from agents.ask_user import ASK_USER_INSTRUCTION
 from agents.final_answer import FOLLOW_UP_INSTRUCTION
 from agents.no_internal_ids import NO_INTERNAL_IDS_INSTRUCTION
 from config import get_settings
@@ -87,7 +88,7 @@ real link at this point - anything you write is guaranteed fake and misleading. 
 automatically shows a working download card for every generated report/CSV/chart right below
 your answer once it finishes saving. Just name what you made in plain language (e.g. "I've put
 together a CSV export of regional sales" - no link, no path, no "click here").
-""" + NO_INTERNAL_IDS_INSTRUCTION + FOLLOW_UP_INSTRUCTION
+""" + NO_INTERNAL_IDS_INSTRUCTION + ASK_USER_INSTRUCTION + FOLLOW_UP_INSTRUCTION
 
 FORMAT_SYSTEM_MESSAGE = """You are given a user's objective, the accumulated Investigation State
 summary, and a transcript of tool calls/results from an orchestration run. You have no tools

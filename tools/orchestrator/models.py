@@ -3,11 +3,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
-# Matches synthetic per-sheet-table file_ids minted by xlsx_ingestor.py as
-# f"{workbook_file_id}_table_{index}" (e.g. "764e3fac8634463abab3a8aa45a36bd2_table_0") - these
-# only ever exist as virtual FileCatalog entries pointing at the parent workbook's real upload,
-# never as their own File document, so they have nothing to resolve to on the client and just
-# show up as a raw internal id in the "files used" row instead of a filename.
 _SYNTHETIC_TABLE_REF_RE = re.compile(r"^[0-9a-f]{8,}_table_\d+$")
 
 
@@ -101,19 +96,6 @@ class FinalResultCollector:
 
 
 class InvestigationCancelled(Exception):
-    """Raised by any agent's run loop (Orchestrator, Tabular, Document) once it notices
-    cancel_check() has tripped, so run_investigation's single `except InvestigationCancelled:`
-    handler catches it the same way regardless of which layer actually detected the cancellation
-    - the orchestrator's own loop, or a nested invoke_tabular_agent/invoke_document_agent call
-    that used to keep running to completion even after the user cancelled (see TabularAgent.run/
-    DocumentAgent.run). Lives here (not agents/orchestrator/agent.py, where it originated) so
-    agents/tabular/agent.py and agents/document/agent.py can raise it too without an import cycle
-    (both are imported BY tools.orchestrator.orchestrator_tools, which agents/orchestrator/agent.py
-    imports).
-
-    `state` is optional - only the full Orchestrator run has an InvestigationState to attach;
-    direct-route/nested calls have nothing to put here, and nothing currently reads this
-    attribute after catching the exception anyway."""
 
     def __init__(self, state=None):
         super().__init__("investigation cancelled")

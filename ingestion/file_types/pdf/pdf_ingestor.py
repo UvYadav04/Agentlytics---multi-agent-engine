@@ -12,10 +12,6 @@ from ingestion.file_types.pdf.utils import extract_tables, is_scanned
 from ingestion.models import IngestionResult
 from vectordb.schema import ChunkRecord
 
-# Kept in sync with Client/src/components/chat/UploadModal.tsx's MAX_PDF_PAGES - the client check
-# is what most users see, this is the server-side backstop for anything that reaches ingestion
-# anyway (API calls, a stale client, etc.) and also keeps oversized PDFs from ever reaching the
-# vector_store.upsert call below, which is what a page count this high tends to blow up.
 MAX_PDF_PAGES = 30
 
 
@@ -74,9 +70,6 @@ class PDFIngestor(BaseIngestor):
             table_index = 0
 
             if progress_callback and total_pages:
-                # Fires once up front with done=0 so the client learns pages_total (and that
-                # ingestion has actually started) before the first page finishes chunking -
-                # otherwise a slow first page would show no progress bar at all for a while.
                 try:
                     progress_callback(0, total_pages)
                 except Exception:
