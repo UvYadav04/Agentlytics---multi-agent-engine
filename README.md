@@ -42,10 +42,43 @@ None of the pieces in step 4/5 hold state between calls — the sandbox pool rel
 - **Per-agent provider/model overrides** — `ORCHESTRATOR_PROVIDER`/`_MODEL`, `TABULAR_AGENT_PROVIDER`/`_MODEL`, `DOCUMENT_AGENT_PROVIDER`/`_MODEL`, `DOCUMENT_PROCESSOR_PROVIDER`/`_MODEL`, `HYPOTHESIS_PROVIDER`/`_MODEL`. Each agent can run on a different provider/model; `DEFAULT_LLM_PROVIDER`/`DEFAULT_MODEL` are the fallback if an agent-specific override is blank. `FALLBACK_LLM_PROVIDER` (defaults to `groq`) is the provider `OrchestratorAgent`/`DocumentAgent` fall back to if their primary provider call fails outright.
 - **Chroma Cloud** — `CHROMA_API_KEY`/`CHROMA_TENANT`/`CHROMA_DATABASE`, required for `ChromaVectorStore` (document RAG and PDF table pointer-chunks).
 - **LlamaParse** — `LLAMAPARSE_API_KEY`, required for PDF ingestion (see `ingestion/README.md` for why parsing is hosted rather than local).
+- **Jev decision model** — `TYPESAFE_API_KEY` (required to call Jev), plus optional `TYPESAFE_BASE_URL`, `TYPESAFE_DEFAULT_MODEL` (defaults to `jev-latest`), `JEV_ENABLED`, `JEV_TIMEOUT_SECONDS`, `JEV_MAX_RETRIES` and `JEV_BACKOFF_SECONDS`. See [Decision model (Jev)](#decision-model-jev).
 - **Reranker** — `RERANKER_MODEL` (defaults to a MiniLM cross-encoder) + `HF_API_TOKEN`, required only if `DocumentAgent` is constructed with a `CrossEncoderReranker`.
 - **Sandbox tuning** — `SANDBOX_IDLE_TIMEOUT_SECONDS`/`SANDBOX_HEALTH_TIMEOUT_SECONDS`/`SANDBOX_REAP_INTERVAL_SECONDS`/`SANDBOX_POOL_MIN_SIZE`/`SANDBOX_POOL_MAX_SIZE`/`SANDBOX_ACQUIRE_TIMEOUT_SECONDS`. All six are read by `sandbox/sandbox_manager.py` via plain `os.environ.get()`, not through `config.py`'s `Settings` — they only pick up values from this `.env` file because `config.py`'s `load_dotenv()` populates `os.environ` as a side effect, and something else in the process has to import `config` before `sandbox_manager` for that to have happened. In practice that ordering already holds (agents/tools import `config` early), but if you ever see one of these fall back to its hardcoded default unexpectedly, check import order first.
 - **Langfuse** — `LANGFUSE_HOST`/`LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`, optional and no-op if blank (every LLM call already goes through `LangfuseTracedChatCompletionClient` regardless — these just decide whether it actually exports anywhere).
 - **`AGENT_LOG_LEVEL`** — controls `agents/logger.py`'s shared `logging.getLogger("agent")`, which every agent writes into (`logs/agents.log` + console).
+
+## Decision model (Jev)
+
+`jev/` is a standalone client for TypeSafe's Jev, a System One decision model: you send a `state` and a map of typed questions, and get typed answers with probabilities instead of generated text. It has no dependency on agents, tools or the LLM providers, so anything in the engine (or `api_service`/`shared`, via `analyzerEngine.jev`) can import it.
+
+Question types:
+
+- `Choice(instructions, options)` picks one option from 2-255 options (a list, or a dict of option to description). The answer has `choice`, `probabilities`, `confidence`, `pick(min_confidence, fallback)` and `ranked()`.
+- `Score(instructions, levels)` rates the state on 2-10 ordered levels. The answer has `score`, `legend`, `probabilities`, `confidence` and `nearest_label()`.
+- `Noul(instructions, yes=..., no=...)` asks a yes/no question. The answer has `noul` (probability of yes), `is_yes(threshold)`, `is_no(threshold)` and `is_uncertain(margin)`.
+
+Ask every question that shares the same state in one call - Jev evaluates them in parallel:
+
+```python
+from jev import Choice, Noul, Score, decide
+
+result = await decide(
+    {"query": query, "has_files": True},
+    {
+        "route": Choice("Which agent should handle `query`?", {
+            "tabular": "Needs computation over tables",
+            "document": "Answer already exists in uploaded documents",
+            "orchestrator": "Needs several capabilities or is unclear",
+        }),
+        "wants_file": Noul("Does `query` ask for a downloadable file such as a CSV or report?"),
+        "complexity": Score("How much investigation does `query` need?", ["Single lookup", "A few steps", "Open-ended"]),
+    },
+)
+route = result.choice("route").pick(0.7, fallback="orchestrator")
+```
+
+Single-question shortcuts are `choose`, `rate` and `yes_no` (and `choose_sync`, `rate_sync`, `yes_no_sync`, `decide_sync` for synchronous code). `try_decide`/`try_decide_sync` return `None` instead of raising when Jev is not configured or the call fails, so existing logic can stay as the fallback. Errors are `JevConfigError`, `JevValidationError`, `JevAuthenticationError`, `JevRequestError`, `JevUnavailableError` and `JevTimeoutError`, all subclasses of `JevError`. Rate limits (429), overloads (529), 5xx responses and timeouts are retried with exponential backoff. Logs record question ids, model, latency and token usage only - never the state.
 
 ## Tool surface
 

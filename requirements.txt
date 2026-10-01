@@ -14,3 +14,4 @@ autogen-core
 autogen-agentchat
 autogen-ext[openai]
 autogen-ext[anthropic]
+httpx
