@@ -17,6 +17,12 @@ from sandbox.path_resolver import InvalidArtifactIdError, get_parquet_path
 from tools.orchestrator.models import InvestigationCancelled, TabularFindings
 from tools.tabular.tabular_tools import TabularTools
 
+try:
+    from monitoring.wrappers.agents import trace_agent
+except Exception:
+    def trace_agent(*args, **kwargs):
+        return lambda fn: fn
+
 
 class TabularAgent:
     def __init__(
@@ -24,6 +30,7 @@ class TabularAgent:
         chat_id: str = "default", sandbox_manager=None, direct_route: bool = False,
         reports_dir: str = "data/reports", chart_capacity_checker=None,
         visualization_service=None, table_service=None, file_service=None,
+        dashboard_service=None,
         **kwargs,
     ):
         self.logger = get_agent_logger("tabular_agent")
@@ -34,6 +41,7 @@ class TabularAgent:
             reports_dir=reports_dir, chart_capacity_checker=chart_capacity_checker,
             visualization_service=visualization_service, table_service=table_service,
             file_service=file_service,
+            dashboard_service=dashboard_service,
         )
         model_config = get_model_config()
         fallback_provider = get_settings().get("FALLBACK_LLM_PROVIDER", "groq")
@@ -57,6 +65,7 @@ class TabularAgent:
         self.last_transform_script: str | None = None
         self.last_transform_file_ids: list = []
 
+    @trace_agent(name="tabular_agent_run", component="agent.tabular")
     async def run(
         self, objective: str, constraints: dict = None, on_event=None, thread_context: dict = None,
         cancel_check=None, ask_user=None,
@@ -66,6 +75,7 @@ class TabularAgent:
         self.last_transform_file_ids = []
         self.tools.saved_artifacts = {}
         self.tools.charts_created = []
+        self.tools.dashboard_bundles_created = []
         self.tools.ask_user_callback = ask_user
 
         constraints = constraints or {}
@@ -123,6 +133,7 @@ class TabularAgent:
             artifact_metadata=self._artifact_metadata(real_refs),
             charts=list(self.tools.charts_created),
             follow_up_questions=follow_up_questions,
+            dashboard_bundles=list(self.tools.dashboard_bundles_created),
         )
 
     def _artifact_metadata(self, real_refs: list) -> dict:

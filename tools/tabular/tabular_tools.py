@@ -3,7 +3,7 @@ import time
 from typing import Optional
 
 from sandbox.path_resolver import new_artifact_id
-from shared.services import FileSystemService, TableArtifactService, VisualizationService
+from shared.services import DashboardService, FileSystemService, TableArtifactService, VisualizationService
 from tools.ask_user import AskUserMixin
 from tools.reporting.models import ChartSpec
 from tools.reporting.reporting_tools import ReportingTools
@@ -29,6 +29,7 @@ class TabularTools(AskUserMixin):
         chart_capacity_checker=None, visualization_service: Optional[VisualizationService] = None,
         table_service: Optional[TableArtifactService] = None,
         file_service: Optional[FileSystemService] = None,
+        dashboard_service: Optional[DashboardService] = None,
     ):
         self.assigned_files = {f.file_id: f for f in assigned_files}
         self.ask_user_source = "tabular_agent"
@@ -50,9 +51,13 @@ class TabularTools(AskUserMixin):
         )
         self.saved_artifacts: dict = {}
         self.charts_created: list = []
+        self.dashboard_bundles_created: list = []
+        self.last_transform_script: Optional[str] = None
+        self.last_transform_file_ids: list = []
         self.visualization_service = visualization_service or VisualizationService(output_dir=reports_dir)
         self.table_service = table_service or TableArtifactService(root_dir=self.root_dir or "data/parquet")
         self.file_service = file_service
+        self.dashboard_service = dashboard_service
         self.chart_capacity_checker = chart_capacity_checker
 
     def _check_assigned(self, file_id: str) -> None:
@@ -107,6 +112,9 @@ class TabularTools(AskUserMixin):
             self._check_assigned(file_id)
         tables = {self._table(fid): fid for fid in file_ids}
 
+        self.last_transform_script = code
+        self.last_transform_file_ids = list(file_ids)
+
         logger.info(
             "run_python: chat=%s workspace=%s file_ids=%s code_chars=%d",
             self.chat_id, self.workspace_id, file_ids, len(code),
@@ -145,11 +153,22 @@ class TabularTools(AskUserMixin):
         "bar", "line", "timeline", "scatter3d", "surface", "pie", "histogram", "box", "heatmap",
     }
 
-    async def create_visualizations(self, visualizations: list[dict]) -> dict:
+    async def create_visualizations(
+        self,
+        visualizations: list[dict],
+        dashboard_title: Optional[str] = None,
+    ) -> dict:
         """Generate charts for one or more previously saved artifacts.
 
         Call this ONCE per run after all required save() calls. Pass every desired chart
         in a single `visualizations` list.
+
+        Parameters:
+        - visualizations: list of chart specifications.
+        - dashboard_title (optional): If the user asked to build or create a dashboard (not
+          just a single chart), provide the dashboard title here (e.g. "Sales Overview").
+          All valid charts in this call will automatically be bundled into a persistent,
+          auto-refreshing dashboard that stays live over time.
 
         Each visualization must include:
         - file_id: file_id returned by save() in this session.
@@ -186,6 +205,7 @@ class TabularTools(AskUserMixin):
         {
             "status": "success" | "partial_error" | "error",
             "charts": [...],   # Successfully generated charts
+            "dashboard": {...}, # Present if dashboard_title was provided
             "errors": [...]    # Validation/generation failures
         }
 
@@ -210,6 +230,69 @@ class TabularTools(AskUserMixin):
 
         charts = []
         errors = []
+
+        if dashboard_title:
+            valid_specs = []
+            for index, raw in enumerate(visualizations or []):
+                requested_file_id = raw.get("file_id") if isinstance(raw, dict) else None
+                try:
+                    spec_kwargs, error = self._validate_chart_request(raw)
+                except Exception as exc:
+                    spec_kwargs, error = None, f"invalid visualization request: {exc}"
+
+                if error:
+                    errors.append({"index": index, "requested_file_id": requested_file_id, "error": error})
+                    continue
+                valid_specs.append(ChartSpec(**spec_kwargs))
+
+            if not valid_specs:
+                return {
+                    "status": "error",
+                    "charts": [],
+                    "errors": errors or [{"error": "visualizations must be a non-empty list of valid chart requests"}],
+                }
+
+            transform_script = self.last_transform_script or ""
+            file_ids = self.last_transform_file_ids or list(self.assigned_files.keys())
+            try:
+                manifest_path = self.reporting.generate_realtime_dashboard_bundle(
+                    self.workspace_id,
+                    dashboard_title,
+                    valid_specs,
+                    transform_script,
+                    file_ids,
+                )
+                staged_d = None
+                if self.dashboard_service:
+                    staged_d = self.dashboard_service.stage_bundle_dashboard(
+                        self.workspace_id, dashboard_title, manifest_path
+                    )
+                self.dashboard_bundles_created.append({
+                    "title": dashboard_title,
+                    "manifest_path": manifest_path,
+                })
+                dashboard_meta = {
+                    "title": dashboard_title,
+                    "chart_count": len(valid_specs),
+                    "charts": [{"title": s.title, "chart_type": s.chart_type} for s in valid_specs],
+                    "status": "staged",
+                    "dashboard_id": staged_d.get("dashboard_id") if staged_d else None,
+                }
+                status = "partial_error" if errors else "success"
+                return {
+                    "status": status,
+                    "dashboard": dashboard_meta,
+                    "charts": [{"title": s.title, "chart_type": s.chart_type} for s in valid_specs],
+                    "errors": errors,
+                }
+            except Exception as exc:
+                logger.exception("failed to generate dashboard bundle in create_visualizations: %s", exc)
+                return {
+                    "status": "error",
+                    "charts": [],
+                    "errors": errors + [{"error": f"dashboard generation failed: {exc}"}],
+                }
+
         for index, raw in enumerate(visualizations or []):
             requested_file_id = raw.get("file_id") if isinstance(raw, dict) else None
             try:

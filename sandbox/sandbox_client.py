@@ -10,6 +10,12 @@ from shared.observability import get_meter, get_tracer
 
 logger = logging.getLogger("sandbox.client")
 
+try:
+    from monitoring.wrappers.sandbox import trace_sandbox
+except Exception:
+    def trace_sandbox(*args, **kwargs):
+        return lambda fn: fn
+
 _tracer = get_tracer("analyzerEngine.sandbox")
 _meter = get_meter("analyzerEngine.sandbox")
 _execute_duration = _meter.create_histogram(
@@ -52,6 +58,7 @@ class SandboxClient:
         except Exception as exc:
             raise SandboxClientError(f"health check failed for {self.socket_path}: {exc}") from exc
 
+    @trace_sandbox(name="docker_sandbox_execute", component="sandbox.docker")
     def execute(self, code: str, tables: dict, workspace_id: str, timeout_seconds: float = None) -> dict:
         timeout = timeout_seconds or self.timeout_seconds
         t0 = time.perf_counter()

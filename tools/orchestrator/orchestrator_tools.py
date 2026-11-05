@@ -190,6 +190,7 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
             reports_dir=self.reports_dir, chart_capacity_checker=self.chart_capacity_checker,
             visualization_service=self.visualization_service, table_service=self.table_service,
             file_service=self.file_service,
+            dashboard_service=self.dashboard_service,
         )
 
         effective_objective = objective

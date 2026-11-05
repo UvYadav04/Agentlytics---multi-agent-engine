@@ -12,6 +12,12 @@ logger = logging.getLogger("vectordb.chroma")
 
 _tracer = get_tracer("analyzerEngine.rag")
 
+try:
+    from monitoring.wrappers.rag import trace_retriever
+except Exception:
+    def trace_retriever(*args, **kwargs):
+        return lambda fn: fn
+
 
 class ChromaVectorStore(BaseVectorStore):
     def __init__(self):
@@ -36,6 +42,7 @@ class ChromaVectorStore(BaseVectorStore):
         logger.info("chroma upsert took %.3fs (%d chunks)", time.perf_counter() - start, len(ids))
         return ids
 
+    @trace_retriever(name="chroma_query", component="rag.chroma")
     def query(self, query_text: str, top_k: int, filters: dict = None) -> list:
         start = time.perf_counter()
         with _tracer.start_as_current_span(

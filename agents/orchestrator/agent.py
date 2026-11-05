@@ -21,6 +21,12 @@ from tools.orchestrator.models import (
 )
 from tools.orchestrator.orchestrator_tools import OrchestratorTools
 
+try:
+    from monitoring.wrappers.agents import trace_agent
+except Exception:
+    def trace_agent(*args, **kwargs):
+        return lambda fn: fn
+
 _AGENT_NAME = "orchestrator_agent"
 
 _MAX_OUTER_ITERATIONS = 25
@@ -141,6 +147,7 @@ class OrchestratorAgent:
             for name in capabilities.all_tool_names()
         }
 
+    @trace_agent(name="orchestrator_agent_run", component="agent.orchestrator")
     async def run(
         self,
         objective: str,

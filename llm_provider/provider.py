@@ -32,4 +32,9 @@ class LLMProvider:
     @staticmethod
     def _wrap(client, provider_name: str, model: str):
         retrying = RetryingChatCompletionClient(client)
-        return LangfuseTracedChatCompletionClient(retrying, provider_name, model)
+        langfuse_client = LangfuseTracedChatCompletionClient(retrying, provider_name, model)
+        try:
+            from monitoring.wrappers.llm import MonitoringTracedChatCompletionClient
+            return MonitoringTracedChatCompletionClient(langfuse_client, provider_name, model)
+        except Exception:
+            return langfuse_client

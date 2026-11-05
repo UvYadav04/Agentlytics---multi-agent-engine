@@ -16,6 +16,12 @@ from tools.orchestrator.models import DocumentFindings, InvestigationCancelled
 from vectordb.chroma_store import ChromaVectorStore
 from vectordb.reranker import DeepInfraReranker
 
+try:
+    from monitoring.wrappers.agents import trace_agent
+except Exception:
+    def trace_agent(*args, **kwargs):
+        return lambda fn: fn
+
 
 class DocumentAgent:
     def __init__(self, assigned_files: list, vector_store=None, reranker=None, direct_route: bool = False, file_service=None, **kwargs):
@@ -55,6 +61,7 @@ class DocumentAgent:
             max_tool_iterations=10,
         )
 
+    @trace_agent(name="document_agent_run", component="agent.document")
     async def run(
         self, objective: str, constraints: dict = None, on_event=None, metadata_brief: str = None,
         thread_context: dict = None, cancel_check=None, ask_user=None,

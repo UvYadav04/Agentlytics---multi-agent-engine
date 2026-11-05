@@ -11,6 +11,12 @@ HF_INFERENCE_URL = "https://api-inference.huggingface.co/models/{model}"
 
 logger = logging.getLogger("vectordb.reranker")
 
+try:
+    from monitoring.wrappers.rag import trace_reranker
+except Exception:
+    def trace_reranker(*args, **kwargs):
+        return lambda fn: fn
+
 
 class BaseReranker(ABC):
     @abstractmethod
@@ -30,6 +36,7 @@ class CrossEncoderReranker(BaseReranker):
         self.url = HF_INFERENCE_URL.format(model=self.model_name)
         self.timeout = timeout
 
+    @trace_reranker(name="deepinfra_rerank", component="rag.reranker")
     def rank(self, query: str, chunks: list, top_k: int = None) -> list:
         if not chunks:
             return []
@@ -77,6 +84,7 @@ class DeepInfraReranker(BaseReranker):
         self.url = self._URL.format(model=self.model_name)
         self.timeout = timeout
 
+    @trace_reranker(name="deepinfra_rerank", component="rag.reranker")
     def rank(self, query: str, chunks: list, top_k: int = None) -> list:
         if not chunks:
             return []

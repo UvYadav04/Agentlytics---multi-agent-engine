@@ -32,6 +32,7 @@ class TabularFindings:
     artifact_metadata: dict = field(default_factory=dict)
     charts: list = field(default_factory=list)
     follow_up_questions: list = field(default_factory=list)
+    dashboard_bundles: list = field(default_factory=list)
 
 
 @dataclass
@@ -94,6 +95,10 @@ class FinalResultCollector:
                 title=chart["title"], artifact_file_id=chart.get("artifact_file_id"),
                 source_tool=source_tool,
             )
+        for bundle in getattr(findings, "dashboard_bundles", []) or []:
+            manifest_path = bundle.get("manifest_path") if isinstance(bundle, dict) else bundle
+            if manifest_path:
+                self.add_artifact(manifest_path, kind="dashboard_bundle", source_tool=source_tool)
         for ref in findings.artifact_refs:
             if ref in chart_locations:
                 continue
