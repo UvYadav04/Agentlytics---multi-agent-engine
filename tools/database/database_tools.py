@@ -126,12 +126,15 @@ class DatabaseTools(AskUserMixin):
         })
 
         if self.on_event:
+            count = result.get("row_count", 0)
+            status_msg = f"Executed database query ({count} rows)" if result.get("success") else "Database query failed"
             await self.on_event({
                 "type": "database_query_executed",
+                "message": status_msg,
                 "connection_id": connection_id,
                 "db_type": db_type,
                 "success": result.get("success", False),
-                "row_count": result.get("row_count", 0),
+                "row_count": count,
             })
 
         return result
