@@ -26,6 +26,7 @@ class DatabaseAgent:
         visualization_service=None,
         dashboard_service=None,
         workspace_id: str = "default",
+        **kwargs,
     ):
         self.logger = get_agent_logger("database_agent")
         self.connection_manager = connection_manager

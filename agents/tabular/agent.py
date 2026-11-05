@@ -24,6 +24,7 @@ class TabularAgent:
         chat_id: str = "default", sandbox_manager=None, direct_route: bool = False,
         reports_dir: str = "data/reports", chart_capacity_checker=None,
         visualization_service=None, table_service=None, file_service=None,
+        **kwargs,
     ):
         self.logger = get_agent_logger("tabular_agent")
         

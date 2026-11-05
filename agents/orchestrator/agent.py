@@ -115,6 +115,7 @@ class OrchestratorAgent:
         reports_dir: str = "data/reports", chat_id: str = "default", sandbox_manager=None,
         result_collector: FinalResultCollector = None, chart_capacity_checker=None, database_access=None,
         visualization_service=None, dashboard_service=None, table_service=None, file_service=None,
+        **kwargs,
     ):
         self.logger = get_agent_logger("orchestrator_agent")
         model_config = get_model_config()

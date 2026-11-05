@@ -42,6 +42,7 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
         dashboard_service: Optional[DashboardService] = None,
         table_service: Optional[TableArtifactService] = None,
         file_service: Optional[FileSystemService] = None,
+        **kwargs,
     ):
         self.catalog = catalog
         self.state = state
