@@ -34,12 +34,13 @@ line, nothing else.
 
 
 class DocumentTools(AskUserMixin):
-    def __init__(self, assigned_files: list, vector_store, reranker=None, llm_provider=None):
+    def __init__(self, assigned_files: list, vector_store, reranker=None, llm_provider=None, file_service=None):
         self.assigned_file_ids = [f.file_id for f in assigned_files]
         self.ask_user_source = "document_agent"
         self.vector_store = vector_store
         self.reranker = reranker
         self.llm_provider = llm_provider or LLMProvider()
+        self.file_service = file_service
 
     def _scoped_file_ids(self, file_ids: list = None) -> list:
         if file_ids is None:

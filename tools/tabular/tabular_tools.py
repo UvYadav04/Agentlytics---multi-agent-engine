@@ -3,6 +3,7 @@ import time
 from typing import Optional
 
 from sandbox.path_resolver import new_artifact_id
+from shared.services import FileSystemService, TableArtifactService, VisualizationService
 from tools.ask_user import AskUserMixin
 from tools.reporting.models import ChartSpec
 from tools.reporting.reporting_tools import ReportingTools
@@ -25,7 +26,9 @@ class TabularTools(AskUserMixin):
     def __init__(
         self, assigned_files: list, storage=None, workspace_id: str = "default",
         chat_id: str = "default", sandbox_manager=None, reports_dir: str = "data/reports",
-        chart_capacity_checker=None,
+        chart_capacity_checker=None, visualization_service: Optional[VisualizationService] = None,
+        table_service: Optional[TableArtifactService] = None,
+        file_service: Optional[FileSystemService] = None,
     ):
         self.assigned_files = {f.file_id: f for f in assigned_files}
         self.ask_user_source = "tabular_agent"
@@ -47,7 +50,9 @@ class TabularTools(AskUserMixin):
         )
         self.saved_artifacts: dict = {}
         self.charts_created: list = []
-       
+        self.visualization_service = visualization_service or VisualizationService(output_dir=reports_dir)
+        self.table_service = table_service or TableArtifactService(root_dir=self.root_dir or "data/parquet")
+        self.file_service = file_service
         self.chart_capacity_checker = chart_capacity_checker
 
     def _check_assigned(self, file_id: str) -> None:
@@ -132,6 +137,8 @@ class TabularTools(AskUserMixin):
             file_id = entry.get("file_id")
             if file_id:
                 self.saved_artifacts[file_id] = entry
+                if self.table_service:
+                    self.table_service.register_artifact(file_id, entry, self.workspace_id)
         return result
 
     _VALID_CHART_TYPES = {
@@ -227,15 +234,20 @@ class TabularTools(AskUserMixin):
                 })
                 continue
 
-            chart_entry = {
-                "artifact_file_id": spec_kwargs["file_id"],
-                "chart_id": chart_id,
-                "chart_type": spec_kwargs["chart_type"],
-                "title": spec_kwargs["title"],
-                "location": location,
-            }
-            self.charts_created.append(chart_entry)
-            charts.append(chart_entry)
+            staged_meta = self.visualization_service.stage_chart(
+                workspace_id=self.workspace_id,
+                title=spec_kwargs["title"],
+                chart_type=spec_kwargs["chart_type"],
+                location=location,
+                chart_id=chart_id,
+                artifact_file_id=spec_kwargs["file_id"],
+                spec=spec_kwargs,
+            )
+            # Retain location for investigation persistence
+            chart_record = {**staged_meta, "location": location}
+            self.charts_created.append(chart_record)
+            # Lean metadata returned to the LLM agent turn
+            charts.append(staged_meta)
 
         if not visualizations:
             status = "error"

@@ -22,7 +22,10 @@ Never invent or guess file_ids, table_refs, or workspace_ids.
 
 Delegate analytical work to specialized agents.
 
-- Use invoke_tabular_agent for structured data analysis.
+- Use invoke_tabular_agent for structured file data analysis (CSV, parquet, Excel tables).
+- Use invoke_database_agent for ALL queries, record lookups, schema inspections, calculations, and data fetching on connected databases (PostgreSQL, MongoDB).
+  Whenever the user asks to "fetch", "query", "show", "get", "find", or "analyze" data in their database (e.g. "fetch me my database mongodb", "show me data from postgres",
+  "find user counts"), you MUST delegate to invoke_database_agent. Pass the connection_id from Connected databases and your analytical objective.
 - Use invoke_document_agent only for targeted document work: a specific fact or quote, a
   section-specific question, finding which tables exist in a document, a comparison across
   documents that needs iterative investigation - i.e. anything that is NOT whole-document

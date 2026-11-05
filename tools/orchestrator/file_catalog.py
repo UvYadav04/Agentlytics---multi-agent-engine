@@ -19,6 +19,29 @@ class FileCatalog:
     def browsable(self) -> list:
         return [e for e in self.entries.values() if is_browsable(e)]
 
+    def get_by_id(self, file_id: str):
+        """Direct lookup of file entry by unique file_id."""
+        return self.entries.get(file_id)
+
+    def get_by_name(self, filename: str, exact: bool = False) -> list:
+        """Find file(s) by filename (supports case-insensitive or exact)."""
+        target = filename.strip()
+        matches = []
+        for e in self.entries.values():
+            if exact and e.filename == target:
+                matches.append(e)
+            elif not exact and (e.filename.lower() == target.lower() or target.lower() in e.filename.lower()):
+                matches.append(e)
+        return matches
+
+    def find_by_prefix(self, prefix: str) -> list:
+        """Find file(s) matching prefix on filename or file_id."""
+        pref = prefix.strip().lower()
+        return [
+            e for e in self.entries.values()
+            if e.filename.lower().startswith(pref) or e.file_id.lower().startswith(pref)
+        ]
+
 
 def is_tabular_output_ref(output_ref: str) -> bool:
     return bool(output_ref) and not output_ref.startswith("workspace_")

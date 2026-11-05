@@ -23,6 +23,7 @@ class TabularAgent:
         self, assigned_files: list, storage=None, workspace_id: str = "default",
         chat_id: str = "default", sandbox_manager=None, direct_route: bool = False,
         reports_dir: str = "data/reports", chart_capacity_checker=None,
+        visualization_service=None, table_service=None, file_service=None,
     ):
         self.logger = get_agent_logger("tabular_agent")
         
@@ -30,6 +31,8 @@ class TabularAgent:
             assigned_files, storage=storage, workspace_id=workspace_id,
             chat_id=chat_id, sandbox_manager=sandbox_manager,
             reports_dir=reports_dir, chart_capacity_checker=chart_capacity_checker,
+            visualization_service=visualization_service, table_service=table_service,
+            file_service=file_service,
         )
         model_config = get_model_config()
         fallback_provider = get_settings().get("FALLBACK_LLM_PROVIDER", "groq")

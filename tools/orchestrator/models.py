@@ -43,6 +43,16 @@ class DocumentFindings:
 
 
 @dataclass
+class DatabaseFindings:
+    summary: str
+    connection_id: str
+    database_type: str
+    query_results: list = field(default_factory=list)
+    charts: list = field(default_factory=list)
+    follow_up_questions: list = field(default_factory=list)
+
+
+@dataclass
 class InvestigationEvent:
     event_type: str
     objective: str
@@ -93,6 +103,21 @@ class FinalResultCollector:
         self.add_files_used(assigned_file_ids)
         for ref in findings.artifact_refs:
             self.add_artifact(ref, kind="document_artifact", source_tool=source_tool)
+
+    def add_database_findings(self, findings, source_tool: str, connection_id: str) -> None:
+        for chart in getattr(findings, "charts", []) or []:
+            location = chart.get("location") or f"db_chart_{chart.get('title', 'chart')}"
+            self.add_chart(
+                location,
+                chart_id=chart.get("chart_id") or chart.get("title", ""),
+                chart_type=chart.get("chart_type", "bar"),
+                title=chart.get("title", ""),
+                connection_id=connection_id,
+                source_tool=source_tool,
+                x_axis=chart.get("x_axis"),
+                y_axis=chart.get("y_axis"),
+                category=chart.get("category"),
+            )
 
 
 class InvestigationCancelled(Exception):

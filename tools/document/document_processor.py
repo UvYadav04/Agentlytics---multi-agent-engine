@@ -132,9 +132,16 @@ def merge_batch_outputs(batch_outputs: list) -> dict:
 
 
 class DocumentProcessor:
-    def __init__(self, assigned_files: list, vector_store, llm_provider=None, max_batch_tokens: int = None):
+    def __init__(self, assigned_files: list, vector_store, llm_provider=None, max_batch_tokens: int = None, file_service=None):
         self.assigned_file_ids = [f.file_id for f in assigned_files]
-        self.filenames = {fid: fid for fid in self.assigned_file_ids}
+        self.file_service = file_service
+        self.filenames = {}
+        for fid in self.assigned_file_ids:
+            if file_service:
+                entry = file_service.get_by_id(fid)
+                self.filenames[fid] = entry.filename if entry else fid
+            else:
+                self.filenames[fid] = fid
         self.vector_store = vector_store
         if llm_provider is not None:
             self.llm_provider = llm_provider

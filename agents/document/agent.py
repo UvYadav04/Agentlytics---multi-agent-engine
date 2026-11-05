@@ -18,7 +18,7 @@ from vectordb.reranker import DeepInfraReranker
 
 
 class DocumentAgent:
-    def __init__(self, assigned_files: list, vector_store=None, reranker=None, direct_route: bool = False):
+    def __init__(self, assigned_files: list, vector_store=None, reranker=None, direct_route: bool = False, file_service=None):
         self.logger = get_agent_logger("document_agent")
         model_config = get_model_config()
         fallback_provider = get_settings().get("FALLBACK_LLM_PROVIDER", "groq")
@@ -29,7 +29,7 @@ class DocumentAgent:
         if reranker is None:
             reranker = DeepInfraReranker()
 
-        self.tools = DocumentTools(assigned_files, vector_store, reranker=reranker, llm_provider=provider)
+        self.tools = DocumentTools(assigned_files, vector_store, reranker=reranker, llm_provider=provider, file_service=file_service)
 
         self.agent = AssistantAgent(
             name="document_agent",

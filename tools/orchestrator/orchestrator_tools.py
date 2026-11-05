@@ -3,9 +3,12 @@ from typing import Optional
 
 from rapidfuzz import fuzz
 
+from agents.database import DatabaseAgent
 from agents.document import DocumentAgent
 from agents.tabular import TabularAgent
+from shared.services import DashboardService, FileSystemService, TableArtifactService, VisualizationService
 from tools.ask_user import AskUserMixin
+from tools.database.connection_manager import ConnectionManager
 from tools.dashboard.live_tool import LiveDashboardMixin
 from sandbox.path_resolver import InvalidArtifactIdError, get_parquet_path, validate_segment
 from tools.hypothesis.hypothesis_tools import HypothesisTools
@@ -14,7 +17,7 @@ from tools.document.document_processor import DocumentProcessor
 from tools.document.metadata import build_document_metadata_brief
 from tools.orchestrator.file_catalog import is_tabular_output_ref
 from tools.orchestrator.memory import LongTermMemory
-from tools.orchestrator.models import FileRef, FinalResultCollector, InvestigationEvent
+from tools.orchestrator.models import DatabaseFindings, FileRef, FinalResultCollector, InvestigationEvent
 from tools.reporting.models import ChartSpec
 from tools.reporting.reporting_tools import ReportingTools
 from tools.tabular.models import FileRef as TabularFileRef
@@ -35,6 +38,10 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
         self, catalog, state, vector_store=None, reranker=None, memory=None, storage=None,
         reports_dir: str = "data/reports", chat_id: str = "default", sandbox_manager=None,
         result_collector: FinalResultCollector = None, chart_capacity_checker=None,
+        visualization_service: Optional[VisualizationService] = None,
+        dashboard_service: Optional[DashboardService] = None,
+        table_service: Optional[TableArtifactService] = None,
+        file_service: Optional[FileSystemService] = None,
     ):
         self.catalog = catalog
         self.state = state
@@ -55,6 +62,14 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
         self.ask_user_source = "orchestrator"
         self._last_transform_script: Optional[str] = None
         self._last_tabular_file_ids: list = []
+        self.database_access = None
+        self.database_connections: list = []
+        self._connection_manager: Optional[ConnectionManager] = None
+        root_parquet = getattr(storage, "root_dir", "data/parquet")
+        self.visualization_service = visualization_service or VisualizationService(output_dir=reports_dir)
+        self.dashboard_service = dashboard_service or DashboardService(output_dir=reports_dir)
+        self.table_service = table_service or TableArtifactService(root_dir=root_parquet)
+        self.file_service = file_service or FileSystemService(catalog=catalog, storage_root=root_parquet)
 
     def list_files(self, workspace_id: str, filters: Optional[dict] = None, max_results: int = 20) -> list:
         """
@@ -172,6 +187,8 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
             tabular_files, storage=self.storage, workspace_id=self.workspace_id,
             chat_id=self.chat_id, sandbox_manager=self.sandbox_manager,
             reports_dir=self.reports_dir, chart_capacity_checker=self.chart_capacity_checker,
+            visualization_service=self.visualization_service, table_service=self.table_service,
+            file_service=self.file_service,
         )
 
         effective_objective = objective
@@ -208,6 +225,57 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
         self._record_event("tabular", objective, result)
         return result
 
+    def _get_connection_manager(self) -> ConnectionManager:
+        if self._connection_manager is None:
+            self._connection_manager = ConnectionManager(self.database_access)
+        return self._connection_manager
+
+    async def invoke_database_agent(
+        self,
+        objective: str,
+        connection_id: Optional[str] = None,
+        constraints: Optional[dict] = None,
+    ) -> DatabaseFindings:
+        """PRIMARY tool for all database operations: querying, fetching records, schema inspection,
+        and data analysis directly on connected databases (PostgreSQL or MongoDB).
+
+        ALWAYS use this tool whenever the user:
+        - Asks to fetch, view, query, or inspect data in a database (e.g. 'fetch me my database mongodb', 'show me users from PostgreSQL', 'find orders in MongoDB').
+        - Asks analytical, aggregation, or exploratory questions about connected databases.
+        - Wants to understand collections, tables, schemas, counts, or metrics from their database.
+
+        DO NOT call build_live_dashboard unless the user explicitly and literally requests to create a persistent dashboard.
+        Provide the target connection_id (from Connected databases) and your analytical objective.
+        The Database Agent inspects schemas, writes and executes safe read-only queries or pipelines, and returns structured findings."""
+        constraints = constraints or {}
+
+        if not connection_id and len(self.database_connections) == 1:
+            connection_id = self.database_connections[0].get("connection_id")
+
+        connection_manager = self._get_connection_manager()
+        agent = DatabaseAgent(
+            connection_manager=connection_manager,
+            available_connections=self.database_connections,
+            visualization_service=self.visualization_service,
+            dashboard_service=self.dashboard_service,
+            workspace_id=self.workspace_id,
+        )
+
+        result = await agent.run(
+            objective=objective,
+            connection_id=connection_id,
+            constraints=constraints,
+            on_event=self.on_event,
+            cancel_check=self.cancel_check,
+            ask_user=self.ask_user_callback,
+        )
+
+        self.result_collector.add_database_findings(
+            result, "invoke_database_agent", connection_id or "unknown",
+        )
+        self._record_event("database", objective, result)
+        return result
+
     async def invoke_document_agent(self, objective: str, assigned_files: list[FileRef], constraints: Optional[dict] = None):
         """Delegate a TARGETED document question to the Document Agent, scoped only to the
         given assigned_files. It runs its own RAG tool-calling loop (search, verify, table
@@ -224,7 +292,7 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
         metadata_brief = build_document_metadata_brief(
             self.catalog, vector_store, [f.file_id for f in assigned_files],
         )
-        agent = DocumentAgent(assigned_files, vector_store=vector_store, reranker=self._get_reranker())
+        agent = DocumentAgent(assigned_files, vector_store=vector_store, reranker=self._get_reranker(), file_service=self.file_service)
         result = await agent.run(
             objective, constraints, on_event=self.on_event, metadata_brief=metadata_brief,
             cancel_check=self.cancel_check, ask_user=self.ask_user_callback,
@@ -268,7 +336,7 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
         """
         constraints = constraints or {}
         self.state.selected_files.extend(f.file_id for f in assigned_files)
-        processor = DocumentProcessor(assigned_files, vector_store=self._get_vector_store())
+        processor = DocumentProcessor(assigned_files, vector_store=self._get_vector_store(), file_service=self.file_service)
         result = await processor.run(objective, constraints, on_event=self.on_event)
         self.result_collector.add_document_findings(
             result, "invoke_document_processor", [f.file_id for f in assigned_files],
@@ -309,7 +377,13 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
         CSV file path."""
         if self.reporting is None:
             raise RuntimeError("no storage configured, cannot generate files")
-        path = self.reporting.generate_csv(self.workspace_id, self._resolve_file_id(file_id), name)
+        resolved_id = self._resolve_file_id(file_id)
+        if self.table_service and self.table_service.exists(resolved_id, self.workspace_id):
+            path = self.table_service.export_csv(resolved_id, self.workspace_id, output_dir=self.reports_dir, name=name)
+        elif self.reporting is not None:
+            path = self.reporting.generate_csv(self.workspace_id, resolved_id, name)
+        else:
+            raise RuntimeError("no storage configured, cannot generate files")
         self.result_collector.add_artifact(path, kind="report", format="csv", source_tool="generate_csv")
         return path
 
@@ -403,6 +477,8 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
             self.workspace_id, title, resolved_sections, self._last_transform_script,
             self._last_tabular_file_ids, name,
         )
+        if self.dashboard_service:
+            self.dashboard_service.stage_bundle_dashboard(self.workspace_id, title, manifest_path)
         self.result_collector.add_artifact(
             manifest_path, kind="dashboard_bundle", source_tool="generate_dashboard",
         )

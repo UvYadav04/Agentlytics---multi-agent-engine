@@ -6,10 +6,12 @@ from tools.dashboard.live_builder import LiveDashboardBuildError, LiveDashboardB
 
 logger = logging.getLogger("tools.dashboard.live_tool")
 
-BUILD_LIVE_DASHBOARD_DESCRIPTION = """Build a LIVE dashboard on one of the user's connected databases
-(PostgreSQL or MongoDB - listed under "Connected databases" in your context). Use this whenever the user
-asks for a real-time / live chart or dashboard on database data, e.g. "build me a real-time dashboard of
-revenue for the past 3 months by region".
+BUILD_LIVE_DASHBOARD_DESCRIPTION = """Build a persistent LIVE dashboard with real-time charts on one of the user's connected databases (PostgreSQL or MongoDB).
+
+CRITICAL USAGE RESTRICTION:
+- Use this tool ONLY AND EXCLUSIVELY when the user explicitly asks to CREATE or BUILD a DASHBOARD (e.g. "build a dashboard", "create a live dashboard", "set up a real-time monitoring view").
+- NEVER use this tool for general database queries, data fetching, questions, summaries, or investigations (e.g. "fetch me my database", "show me data", "query my users").
+- For ANY data fetching, querying, record inspection, or analysis on connected databases, you MUST use `invoke_database_agent` instead.
 
 - connection_id: the connection_id of the database to use, exactly as listed in your context.
 - request: the user's dashboard request in plain language, including any time period
@@ -42,6 +44,15 @@ class LiveDashboardMixin:
             return {"error": str(exc)}
 
         reference = f"live-dashboard-{uuid.uuid4().hex[:12]}"
+        dashboard_service = getattr(self, "dashboard_service", None)
+        if dashboard_service:
+            dashboard_service.stage_live_dashboard(
+                workspace_id=getattr(self, "workspace_id", "default"),
+                title=spec.get("title", "Live Dashboard"),
+                spec=spec,
+                connection_id=connection["id"],
+                dashboard_id=reference,
+            )
         self.result_collector.add_artifact(
             reference, kind="live_dashboard", spec=spec, connection_id=connection["id"],
         )

@@ -114,6 +114,7 @@ class OrchestratorAgent:
         self, catalog, vector_store=None, reranker=None, memory=None, storage=None,
         reports_dir: str = "data/reports", chat_id: str = "default", sandbox_manager=None,
         result_collector: FinalResultCollector = None, chart_capacity_checker=None, database_access=None,
+        visualization_service=None, dashboard_service=None, table_service=None, file_service=None,
     ):
         self.logger = get_agent_logger("orchestrator_agent")
         model_config = get_model_config()
@@ -125,6 +126,10 @@ class OrchestratorAgent:
             reports_dir=reports_dir, chat_id=chat_id, sandbox_manager=sandbox_manager,
             result_collector=result_collector or FinalResultCollector(),
             chart_capacity_checker=chart_capacity_checker,
+            visualization_service=visualization_service,
+            dashboard_service=dashboard_service,
+            table_service=table_service,
+            file_service=file_service,
         )
         self.tools.database_access = database_access
         self.model_client = client
@@ -292,7 +297,7 @@ class OrchestratorAgent:
 
         connections = self.tools.database_connections or []
         if connections:
-            lines.append("Connected databases (live; use build_live_dashboard for real-time dashboards):")
+            lines.append("Connected databases (live; ALWAYS use invoke_database_agent to query, fetch, or analyze data. ONLY use build_live_dashboard if the user explicitly requested to create a dashboard):")
             for c in connections:
                 objects = c.get("objects") or []
                 shown = ", ".join(objects[:max_columns])
@@ -313,6 +318,7 @@ class OrchestratorAgent:
         "list_file_formats": "Checking file types",
         "generate_hypotheses": "Generating hypotheses",
         "invoke_tabular_agent": "Assigning an agent",
+        "invoke_database_agent": "Querying database",
         "invoke_document_agent": "Assigning an agent",
         "invoke_document_processor": "Assigning an agent",
         "generate_csv": "Exporting a CSV",

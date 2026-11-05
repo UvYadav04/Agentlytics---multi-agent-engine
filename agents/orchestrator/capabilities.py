@@ -8,6 +8,7 @@ CORE_TOOLS = [
     "list_file_formats",
     "generate_hypotheses",
     "invoke_tabular_agent",
+    "invoke_database_agent",
     "invoke_document_agent",
     "invoke_document_processor",
     "request_capabilities",

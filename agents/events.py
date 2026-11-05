@@ -1,4 +1,4 @@
-_AGENT_TOOLS = {"invoke_tabular_agent", "invoke_document_agent", "invoke_document_processor"}
+_AGENT_TOOLS = {"invoke_tabular_agent", "invoke_document_agent", "invoke_document_processor", "invoke_database_agent"}
 _WRITER_TOOLS = {"generate_report"}
 
 
