@@ -10,6 +10,12 @@ from tools.document.token_estimate import estimate_tokens
 from tools.llm_call import ask_llm_async
 from tools.orchestrator.models import DocumentFindings
 
+try:
+    from monitoring.wrappers.agents import trace_agent
+except Exception:
+    def trace_agent(*args, **kwargs):
+        return lambda fn: fn
+
 logger = logging.getLogger("tools.document.processor")
 
 DEFAULT_MAX_BATCH_TOKENS = 6000
@@ -163,6 +169,7 @@ class DocumentProcessor:
         )
         self.logger = logger
 
+    @trace_agent(name="document_processor_run", component="agent.document_processor")
     async def run(self, objective: str, constraints: dict = None, on_event=None) -> DocumentFindings:
         run_start = time.perf_counter()
 

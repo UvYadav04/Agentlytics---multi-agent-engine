@@ -12,6 +12,12 @@ from tools.ask_user import AskUserMixin
 from tools.database.connection_manager import ConnectionManager
 from tools.reporting.reporting_tools import ReportingTools, ChartSpec
 
+try:
+    from monitoring.wrappers.tools import trace_tool
+except Exception:
+    def trace_tool(*args, **kwargs):
+        return lambda fn: fn
+
 logger = logging.getLogger("tools.database.database_tools")
 
 
@@ -55,6 +61,7 @@ class DatabaseTools(AskUserMixin):
             for c in self.available_connections
         ]
 
+    @trace_tool(name="inspect_database_schema", component="tool.database.inspect_schema", step_type="database")
     async def inspect_schema(self, connection_id: str) -> dict[str, Any]:
         """
         Inspect detailed schema for a connected database.
@@ -70,6 +77,7 @@ class DatabaseTools(AskUserMixin):
             logger.exception("Failed to inspect schema for connection %s", connection_id)
             return {"success": False, "error": f"Failed to inspect schema: {exc}"}
 
+    @trace_tool(name="execute_database_query", component="tool.database.execute_query", step_type="database")
     async def execute_query(self, connection_id: str, query: dict) -> dict[str, Any]:
         """
         Execute a read-only query directly against an authorized database connection.
@@ -152,6 +160,7 @@ class DatabaseTools(AskUserMixin):
 
         return result
 
+    @trace_tool(name="propose_visualization", component="tool.database.propose_visualization")
     def propose_visualization(
         self, connection_id: str, chart_type: str, title: str, x_axis: str, y_axis: str,
         category: Optional[str] = None,

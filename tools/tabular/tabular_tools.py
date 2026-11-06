@@ -19,6 +19,12 @@ from tools.tabular.models import (
 )
 from tools.tabular.sandbox_executor import PythonSandbox, SandboxExecutionError
 
+try:
+    from monitoring.wrappers.tools import trace_tool
+except Exception:
+    def trace_tool(*args, **kwargs):
+        return lambda fn: fn
+
 logger = logging.getLogger("tools.tabular")
 
 
@@ -90,6 +96,7 @@ class TabularTools(AskUserMixin):
             })
         return files
 
+    @trace_tool(name="run_python_sandbox", component="tool.tabular.run_python", step_type="sandbox")
     def run_python(self, code: str, file_ids: list) -> dict:
         """Execute Python code in an isolated sandbox. Pass every assigned file_id you need.
 
@@ -153,6 +160,7 @@ class TabularTools(AskUserMixin):
         "bar", "line", "timeline", "scatter3d", "surface", "pie", "histogram", "box", "heatmap",
     }
 
+    @trace_tool(name="create_visualizations", component="tool.tabular.create_visualizations")
     async def create_visualizations(
         self,
         visualizations: list[dict],

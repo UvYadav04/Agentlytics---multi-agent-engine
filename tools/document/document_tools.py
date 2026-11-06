@@ -13,6 +13,12 @@ from tools.document.models import (
 )
 from tools.llm_call import ask_llm
 
+try:
+    from monitoring.wrappers.tools import trace_tool
+except Exception:
+    def trace_tool(*args, **kwargs):
+        return lambda fn: fn
+
 logger = logging.getLogger("tools.document")
 
 VERIFY_PROMPT = """Chunk text:
@@ -84,6 +90,7 @@ class DocumentTools(AskUserMixin):
         response = ask_llm(client, EXPAND_QUERY_PROMPT.format(objective=objective))
         return [line.strip("- ").strip() for line in response.strip().splitlines() if line.strip()]
 
+    @trace_tool(name="search_documents", component="tool.document.search", step_type="retriever")
     def search_documents(self, query: str, file_ids: list = None, top_k: int = 8) -> list:
         """Semantic search across assigned files (or a subset via file_ids) for chunks relevant
         to query. Call this first for most objectives - it's the main way to find relevant text.
@@ -167,6 +174,7 @@ class DocumentTools(AskUserMixin):
 
         return [SectionInfo(section_title=t, page_start=b[0], page_end=b[1]) for t, b in sections.items()]
 
+    @trace_tool(name="compare_documents", component="tool.document.compare", step_type="tool")
     def compare_documents(self, file_ids: list, query: str, top_k_per_file: int = 5) -> ComparisonResult:
         """Run the same query separately against each of the given files and return per-file
         results. Use this when the objective asks you to compare, contrast, or find differences
@@ -213,6 +221,7 @@ class DocumentTools(AskUserMixin):
             raise ValueError(f"table_ref '{table_ref}' not found")
         return self._to_table_info(chunks[0])
 
+    @trace_tool(name="verify_chunk_supports_claim", component="tool.document.verify", step_type="tool")
     def verify_chunk_supports_claim(self, chunk_id: str, claim: str) -> VerificationResult:
         """Check whether a specific chunk's text actually supports a claim (returns
         supported: bool, reasoning: str). Use this as a final sanity check on a chunk you plan
