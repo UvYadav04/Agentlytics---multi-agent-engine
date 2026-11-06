@@ -1,9 +1,16 @@
 import logging
+import os
+import re
+import uuid
+from datetime import date
 from typing import Any, Optional
+
+import pandas as pd
 
 from shared.services import DashboardService, VisualizationService
 from tools.ask_user import AskUserMixin
 from tools.database.connection_manager import ConnectionManager
+from tools.reporting.reporting_tools import ReportingTools, ChartSpec
 
 logger = logging.getLogger("tools.database.database_tools")
 
@@ -17,6 +24,7 @@ class DatabaseTools(AskUserMixin):
         visualization_service: Optional[VisualizationService] = None,
         dashboard_service: Optional[DashboardService] = None,
         workspace_id: str = "default",
+        reports_dir: str = "data/reports",
     ):
         self.connection_manager = connection_manager
         self.available_connections = available_connections or []
@@ -27,6 +35,8 @@ class DatabaseTools(AskUserMixin):
         self.visualization_service = visualization_service
         self.dashboard_service = dashboard_service
         self.workspace_id = workspace_id
+        self.reports_dir = reports_dir
+        self.last_query_rows: list[dict] = []
 
     def list_available_connections(self) -> list[dict]:
         """
@@ -116,6 +126,9 @@ class DatabaseTools(AskUserMixin):
 
         result = await adapter.execute_query(query)
 
+        if result.get("success"):
+            self.last_query_rows = list(result.get("rows") or [])
+
         # Record query history for the agent's findings
         self.query_history.append({
             "connection_id": connection_id,
@@ -144,30 +157,69 @@ class DatabaseTools(AskUserMixin):
         category: Optional[str] = None,
     ) -> dict[str, Any]:
         """
-        Propose a chart specification based on actual data returned by a query.
+        Propose and generate an interactive visualization based on actual query data.
         - chart_type: "bar", "line", "scatter", "pie", or "donut"
         - title: Plain descriptive title for the chart
         - x_axis: Column/field name representing the independent axis
         - y_axis: Column/field name representing the numerical measure
         - category: Optional series/category column name
         """
+        chart_type_norm = (chart_type or "bar").lower().strip()
+        if chart_type_norm in ("donut", "pie"):
+            chart_type_norm = "pie"
+            spec_obj = ChartSpec(file_id="db_query", chart_type="pie", title=title, label_column=x_axis, value_column=y_axis)
+        elif chart_type_norm in ("scatter", "scatter3d"):
+            chart_type_norm = "scatter3d"
+            spec_obj = ChartSpec(file_id="db_query", chart_type="scatter3d", title=title, x_column=x_axis, y_column=y_axis, z_column=category or y_axis)
+        elif category:
+            spec_obj = ChartSpec(file_id="db_query", chart_type=chart_type_norm, title=title, label_column=x_axis, series_column=category, value_column=y_axis)
+        else:
+            spec_obj = ChartSpec(file_id="db_query", chart_type=chart_type_norm, title=title, label_column=x_axis, value_columns=[y_axis])
+
+        cid = f"chart_{chart_type_norm}_{uuid.uuid4().hex[:10]}"
+        safe_title = re.sub(r"[^0-9a-zA-Z_-]", "_", title)[:40].strip("_") or "chart"
+        chart_folder = os.path.join(self.reports_dir, date.today().isoformat(), f"{cid}_{safe_title}")
+        os.makedirs(chart_folder, exist_ok=True)
+        chart_path = os.path.join(chart_folder, "chart.html")
+
+        # Render HTML from the query rows if available
+        rendered = False
+        if self.last_query_rows:
+            try:
+                df = pd.DataFrame(self.last_query_rows)
+                sec = ReportingTools._render_section(df, spec_obj)
+                html_content = ReportingTools._render_html(title, [sec], source_count=1)
+                with open(chart_path, "w", encoding="utf-8") as f:
+                    f.write(html_content)
+                rendered = True
+                logger.info("DatabaseTools: rendered chart HTML at %s (%d bytes)", chart_path, len(html_content))
+            except Exception:
+                logger.exception("DatabaseTools: failed to render chart HTML from query rows")
+
         spec = {
+            "chart_id": cid,
             "connection_id": connection_id,
-            "chart_type": chart_type,
+            "chart_type": chart_type_norm,
             "title": title,
             "x_axis": x_axis,
             "y_axis": y_axis,
             "category": category,
+            "location": chart_path,
         }
-        self.charts_proposed.append(spec)
-        if self.visualization_service:
+
+        if self.visualization_service and rendered and os.path.isfile(chart_path):
             staged = self.visualization_service.stage_chart(
                 workspace_id=self.workspace_id,
                 title=title,
-                chart_type=chart_type,
-                location=f"db_query_chart_{title}",
+                chart_type=chart_type_norm,
+                location=chart_path,
+                chart_id=cid,
                 spec=spec,
             )
+            chart_record = {**staged, "location": chart_path, "chart_id": cid}
+            self.charts_proposed.append(chart_record)
             return {"status": "accepted", "specification": staged}
+
+        self.charts_proposed.append(spec)
         return {"status": "accepted", "specification": spec}
 

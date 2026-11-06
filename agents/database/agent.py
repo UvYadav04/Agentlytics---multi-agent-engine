@@ -32,6 +32,7 @@ class DatabaseAgent:
         visualization_service=None,
         dashboard_service=None,
         workspace_id: str = "default",
+        reports_dir: str = "data/reports",
         **kwargs,
     ):
         self.logger = get_agent_logger("database_agent")
@@ -42,6 +43,7 @@ class DatabaseAgent:
             visualization_service=visualization_service,
             dashboard_service=dashboard_service,
             workspace_id=workspace_id,
+            reports_dir=reports_dir,
         )
 
         model_config = get_model_config()
