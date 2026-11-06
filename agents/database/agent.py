@@ -17,6 +17,12 @@ from tools.database.connection_manager import ConnectionManager
 from tools.database.database_tools import DatabaseTools
 from tools.orchestrator.models import DatabaseFindings, InvestigationCancelled
 
+try:
+    from monitoring.wrappers.agents import trace_agent
+except Exception:
+    def trace_agent(*args, **kwargs):
+        return lambda fn: fn
+
 
 class DatabaseAgent:
     def __init__(
@@ -59,6 +65,7 @@ class DatabaseAgent:
             max_tool_iterations=10,
         )
 
+    @trace_agent(name="database_agent_run", component="agent.database")
     async def run(
         self,
         objective: str,
