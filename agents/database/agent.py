@@ -6,7 +6,7 @@ from typing import Any, Optional
 from autogen_agentchat.agents import AssistantAgent
 from autogen_core import CancellationToken
 
-from agents.database.config import SYSTEM_MESSAGE, get_model_config
+from agents.database.config import get_model_config, get_system_message
 from agents.events import make_tool_event_translator
 from agents.final_answer import split_follow_up_questions
 from agents.logger import get_agent_logger, log_event
@@ -33,10 +33,12 @@ class DatabaseAgent:
         dashboard_service=None,
         workspace_id: str = "default",
         reports_dir: str = "data/reports",
+        direct_route: bool = False,
         **kwargs,
     ):
         self.logger = get_agent_logger("database_agent")
         self.connection_manager = connection_manager
+        self.direct_route = direct_route
         self.tools = DatabaseTools(
             connection_manager=connection_manager,
             available_connections=available_connections or [],
@@ -64,7 +66,7 @@ class DatabaseAgent:
                 self.tools.build_live_dashboard,
                 self.tools.ask_user,
             ],
-            system_message=SYSTEM_MESSAGE,
+            system_message=get_system_message(direct_route),
             reflect_on_tool_use=False,
             max_tool_iterations=10,
         )
@@ -106,7 +108,9 @@ class DatabaseAgent:
                     task_lines.append(f"Known tables/collections: {', '.join(objects[:30])}")
         else:
             connections = self.tools.list_available_connections()
-            task_lines.append(f"Available database connections: {connections}")
+            task_lines.append(
+                f"Available database connections - use these connection_id and table/collection names directly: {connections}"
+            )
 
         if constraints:
             task_lines.append(f"Constraints: {constraints}")
@@ -152,6 +156,8 @@ class DatabaseAgent:
         self.logger.info("database agent run took %.3fs", time.perf_counter() - run_start)
 
         summary, follow_up_questions = split_follow_up_questions(final_text)
+        if not self.direct_route:
+            follow_up_questions = []
         db_type = conn_info.get("db_type", "unknown") if conn_info else "unknown"
         if not connection_id and self.tools.query_history:
             connection_id = self.tools.query_history[-1].get("connection_id", "")

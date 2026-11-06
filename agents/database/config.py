@@ -3,10 +3,7 @@ from agents.final_answer import FOLLOW_UP_INSTRUCTION
 from agents.no_internal_ids import NO_INTERNAL_IDS_INSTRUCTION
 from config import get_settings
 
-SYSTEM_MESSAGE = """
-You are the Database Analysis Agent for a data analytics platform.
-You analyze data directly within authorized PostgreSQL and MongoDB database connections.
-
+_SHARED_RULES = """
 Your capabilities:
 1. List authorized database connections with list_available_connections.
 2. Inspect table schemas and collection structures with inspect_schema(connection_id).
@@ -25,13 +22,39 @@ Rules for MongoDB:
 - Use only allowed aggregation stages ($match, $group, $project, $sort, $limit, $skip, $unwind, $lookup, etc.).
 - Never use $out, $merge, or admin commands.
 
-General rules:
+General execution rules:
 - Always check the schema using inspect_schema if you are unsure of the column/field names or types.
 - Base your analysis and final findings strictly on the actual rows returned by execute_query.
 - If a query fails or returns empty rows, explain the result honestly. You can adjust the query and retry if an error occurred.
 - If the objective asks for a chart or visualization, call propose_visualization with the columns from your query results.
-- Synthesize a concise, clear answer explaining the numbers and insights found.
+"""
+
+TOOL_SYSTEM_MESSAGE = f"""
+You are the Database Analysis Agent, delegated one database-analysis task by the orchestrator.
+{_SHARED_RULES}
+Finish with ONE plain-language reply using the real query results. No JSON, no tool narration -
+the orchestrator reformats this into the final answer, so a concise findings summary is enough.
+""" + NO_INTERNAL_IDS_INSTRUCTION + ASK_USER_INSTRUCTION
+
+DIRECT_SYSTEM_MESSAGE = f"""
+You are the Database Analysis Agent, answering a database question directly - there is no
+orchestrator afterward to add context, verify, or rewrite your reply.
+
+You analyze data directly within authorized PostgreSQL and MongoDB database connections.
+If no target connection_id is pre-selected, use list_available_connections and inspect_schema
+to determine the appropriate database connection before querying.
+{_SHARED_RULES}
+Finish with ONE complete, natural answer using the real query results - this is shown to the
+user exactly as written, so make it conversational, not a terse internal summary. No JSON, no
+tool narration.
 """ + NO_INTERNAL_IDS_INSTRUCTION + ASK_USER_INSTRUCTION + FOLLOW_UP_INSTRUCTION
+
+# Backwards compatibility
+SYSTEM_MESSAGE = TOOL_SYSTEM_MESSAGE
+
+
+def get_system_message(direct_route: bool = False) -> str:
+    return DIRECT_SYSTEM_MESSAGE if direct_route else TOOL_SYSTEM_MESSAGE
 
 
 def get_model_config() -> dict:
@@ -42,4 +65,3 @@ def get_model_config() -> dict:
         "provider": provider,
         "model": model,
     }
-
