@@ -12,15 +12,101 @@ logger = logging.getLogger("tools.database.adapters.postgres")
 
 
 class PostgresAdapter(BaseDatabaseAdapter):
-    async def inspect_schema(self) -> dict[str, Any]:
+    async def inspect_schema(self, table_or_collection: str | None = None) -> dict[str, Any]:
         try:
             _, result = await inspect_database("postgresql", self.connection_string)
+            if not result.objects:
+                return {
+                    "success": True,
+                    "database_type": "postgresql",
+                    "database": result.database,
+                    "tables": [],
+                    "message": "Connected, but no tables were found in this database.",
+                }
+
+            if table_or_collection:
+                target = table_or_collection.strip().lower()
+                matched = next(
+                    (
+                        obj for obj in result.objects
+                        if obj.get("name", "").lower() == target
+                        or f"{obj.get('schema', '').lower()}.{obj.get('name', '').lower()}" == target
+                    ),
+                    None,
+                )
+                if not matched:
+                    available = [
+                        f"{obj.get('schema')}.{obj.get('name')}" if obj.get("schema") else obj.get("name")
+                        for obj in result.objects
+                    ]
+                    return {
+                        "success": False,
+                        "database_type": "postgresql",
+                        "error": f"Table '{table_or_collection}' not found. Available tables: {available}",
+                    }
+
+                raw_fields = matched.get("fields", [])
+                compact_fields = [
+                    {
+                        "name": f.get("name"),
+                        "type": f.get("type"),
+                        "nullable": f.get("nullable"),
+                        "primary_key": f.get("primary_key", False),
+                    }
+                    for f in raw_fields[:100]
+                ]
+                return {
+                    "success": True,
+                    "database_type": "postgresql",
+                    "database": result.database,
+                    "schema": matched.get("schema"),
+                    "table": matched.get("name"),
+                    "row_count": matched.get("row_count"),
+                    "fields": compact_fields,
+                    "foreign_keys": matched.get("foreign_keys", []),
+                    "total_columns": len(raw_fields),
+                }
+
+            if len(result.objects) <= 2:
+                tables = []
+                for obj in result.objects:
+                    raw_fields = obj.get("fields", [])
+                    tables.append({
+                        "table": f"{obj.get('schema')}.{obj.get('name')}" if obj.get("schema") else obj.get("name"),
+                        "row_count": obj.get("row_count"),
+                        "fields": [
+                            {
+                                "name": f.get("name"),
+                                "type": f.get("type"),
+                                "primary_key": f.get("primary_key", False),
+                            }
+                            for f in raw_fields[:100]
+                        ],
+                        "foreign_keys": obj.get("foreign_keys", []),
+                    })
+                return {
+                    "success": True,
+                    "database_type": "postgresql",
+                    "database": result.database,
+                    "tables": tables,
+                }
+
+            tables_summary = [
+                {
+                    "table": f"{obj.get('schema')}.{obj.get('name')}" if obj.get("schema") else obj.get("name"),
+                    "row_count": obj.get("row_count"),
+                    "key_columns": [f.get("name") for f in obj.get("fields", [])[:10]],
+                    "total_columns": len(obj.get("fields", [])),
+                }
+                for obj in result.objects
+            ]
             return {
                 "success": True,
                 "database_type": "postgresql",
                 "database": result.database,
-                "schema": result.schema_document(),
-                "warnings": result.warnings,
+                "tables": tables_summary,
+                "total_tables": len(result.objects),
+                "instruction": "Call inspect_schema with table_or_collection='<table_name>' to view detailed columns and keys for a specific table.",
             }
         except (ConnectionStringError, DatabaseInspectionError, Exception) as exc:
             logger.warning("Postgres schema inspection error: %s", exc)

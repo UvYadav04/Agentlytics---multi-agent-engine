@@ -12,15 +12,82 @@ logger = logging.getLogger("tools.database.adapters.mongodb")
 
 
 class MongoAdapter(BaseDatabaseAdapter):
-    async def inspect_schema(self) -> dict[str, Any]:
+    async def inspect_schema(self, table_or_collection: str | None = None) -> dict[str, Any]:
         try:
             _, result = await inspect_database("mongodb", self.connection_string)
+            if not result.objects:
+                return {
+                    "success": True,
+                    "database_type": "mongodb",
+                    "database": result.database,
+                    "collections": [],
+                    "message": "Connected, but no collections were found in this database.",
+                }
+
+            if table_or_collection:
+                target = table_or_collection.strip().lower()
+                matched = next(
+                    (obj for obj in result.objects if obj.get("name", "").lower() == target),
+                    None,
+                )
+                if not matched:
+                    available = [obj.get("name") for obj in result.objects]
+                    return {
+                        "success": False,
+                        "database_type": "mongodb",
+                        "error": f"Collection '{table_or_collection}' not found. Available collections: {available}",
+                    }
+
+                raw_fields = matched.get("fields", [])
+                compact_fields = [
+                    {
+                        "name": f.get("name"),
+                        "type": f.get("type"),
+                    }
+                    for f in raw_fields[:80]
+                ]
+                return {
+                    "success": True,
+                    "database_type": "mongodb",
+                    "database": result.database,
+                    "collection": matched.get("name"),
+                    "row_count": matched.get("row_count"),
+                    "fields": compact_fields,
+                    "total_fields": len(raw_fields),
+                }
+
+            if len(result.objects) == 1:
+                obj = result.objects[0]
+                raw_fields = obj.get("fields", [])
+                return {
+                    "success": True,
+                    "database_type": "mongodb",
+                    "database": result.database,
+                    "collection": obj.get("name"),
+                    "row_count": obj.get("row_count"),
+                    "fields": [
+                        {"name": f.get("name"), "type": f.get("type")}
+                        for f in raw_fields[:80]
+                    ],
+                    "total_fields": len(raw_fields),
+                }
+
+            collections_summary = [
+                {
+                    "name": obj.get("name"),
+                    "row_count": obj.get("row_count"),
+                    "key_fields": [f.get("name") for f in obj.get("fields", [])[:10]],
+                    "total_fields": len(obj.get("fields", [])),
+                }
+                for obj in result.objects
+            ]
             return {
                 "success": True,
                 "database_type": "mongodb",
                 "database": result.database,
-                "schema": result.schema_document(),
-                "warnings": result.warnings,
+                "collections": collections_summary,
+                "total_collections": len(result.objects),
+                "instruction": "Call inspect_schema with table_or_collection='<collection_name>' to view detailed fields for a specific collection.",
             }
         except (ConnectionStringError, DatabaseInspectionError, Exception) as exc:
             logger.warning("MongoDB schema inspection error: %s", exc)

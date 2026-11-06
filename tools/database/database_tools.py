@@ -62,15 +62,26 @@ class DatabaseTools(AskUserMixin):
         ]
 
     @trace_tool(name="inspect_database_schema", component="tool.database.inspect_schema", step_type="database")
-    async def inspect_schema(self, connection_id: str) -> dict[str, Any]:
+    async def inspect_schema(
+        self,
+        connection_id: str,
+        table_or_collection: Optional[str] = None,
+        table: Optional[str] = None,
+        collection: Optional[str] = None,
+    ) -> dict[str, Any]:
         """
-        Inspect detailed schema for a connected database.
-        - For PostgreSQL: returns tables, columns, and primary/foreign keys.
-        - For MongoDB: returns collections, sampled field names, and data types.
+        Inspect schema for a connected database.
+
+        Args:
+            connection_id: The unique ID of the database connection.
+            table_or_collection: (Optional) Specific table name (PostgreSQL) or collection name (MongoDB) to inspect in detail (e.g. 'investigations', 'users'). If omitted, returns an overview of all tables/collections.
+            table: (Optional) Alias for table_or_collection.
+            collection: (Optional) Alias for table_or_collection.
         """
+        target = table_or_collection or table or collection
         try:
             _, adapter = await self.connection_manager.get_adapter(connection_id)
-            return await adapter.inspect_schema()
+            return await adapter.inspect_schema(table_or_collection=target)
         except LookupError as exc:
             return {"success": False, "error": str(exc)}
         except Exception as exc:

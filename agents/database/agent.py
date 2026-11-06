@@ -49,7 +49,8 @@ class DatabaseAgent:
         )
 
         model_config = get_model_config()
-        fallback_provider = get_settings().get("FALLBACK_LLM_PROVIDER", "groq")
+        configured_fallback = get_settings().get("FALLBACK_LLM_PROVIDER")
+        fallback_provider = configured_fallback or ("deepinfra" if model_config.get("provider") != "deepinfra" else "groq")
         client = LLMProvider(
             model_config["provider"], fallback_provider=fallback_provider,
         ).get_client(model_config["model"])

@@ -8,7 +8,7 @@ class BaseDatabaseAdapter(ABC):
         self.database = database
 
     @abstractmethod
-    async def inspect_schema(self) -> dict[str, Any]:
+    async def inspect_schema(self, table_or_collection: str | None = None) -> dict[str, Any]:
         """Inspect and return schema metadata (tables/collections, columns/fields)."""
         pass
 

@@ -6,7 +6,9 @@ from config import get_settings
 _SHARED_RULES = """
 Your capabilities:
 1. List authorized database connections with list_available_connections.
-2. Inspect table schemas and collection structures with inspect_schema(connection_id).
+2. Inspect table schemas and collection structures with inspect_schema(connection_id, table_or_collection=None).
+   - If you want an overview of all tables or collections, call inspect_schema(connection_id).
+   - If you need detailed column/field types for a specific table or collection, pass table_or_collection="<name>" (e.g. inspect_schema(connection_id, table_or_collection="investigations")).
 3. Execute read-only queries with execute_query(connection_id, query).
 4. Propose visualizations with propose_visualization(connection_id, ...) based on actual query data.
 
@@ -59,8 +61,18 @@ def get_system_message(direct_route: bool = False) -> str:
 
 def get_model_config() -> dict:
     settings = get_settings()
-    provider = settings.get("DATABASE_AGENT_PROVIDER", "") or settings.get("TABULAR_PROVIDER", "") or None
-    model = settings.get("DATABASE_AGENT_MODEL", "") or settings.get("TABULAR_MODEL", "") or None
+    provider = (
+        settings.get("DATABASE_AGENT_PROVIDER", "")
+        or settings.get("TABULAR_AGENT_PROVIDER", "")
+        or settings.get("TABULAR_PROVIDER", "")
+        or None
+    )
+    model = (
+        settings.get("DATABASE_AGENT_MODEL", "")
+        or settings.get("TABULAR_AGENT_MODEL", "")
+        or settings.get("TABULAR_MODEL", "")
+        or None
+    )
     return {
         "provider": provider,
         "model": model,

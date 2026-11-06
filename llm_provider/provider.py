@@ -9,7 +9,10 @@ class LLMProvider:
     def __init__(self, provider_name: str = None, fallback_provider: str = None):
         settings = get_settings()
         self.provider_name = provider_name or settings.get("DEFAULT_LLM_PROVIDER", "groq")
-        self.fallback_provider = fallback_provider
+        fallback = fallback_provider or settings.get("FALLBACK_LLM_PROVIDER")
+        if fallback and fallback == self.provider_name:
+            fallback = "deepinfra" if self.provider_name != "deepinfra" else "groq"
+        self.fallback_provider = fallback
 
     def get_client(self, model: str = None):
         builder = registry.get_builder(self.provider_name)
