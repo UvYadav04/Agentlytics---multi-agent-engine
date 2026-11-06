@@ -2,7 +2,6 @@ import logging
 import os
 import re
 import uuid
-from datetime import date
 from typing import Any, Optional
 
 import pandas as pd
@@ -10,7 +9,6 @@ import pandas as pd
 from shared.services import DashboardService, VisualizationService
 from tools.ask_user import AskUserMixin
 from tools.database.connection_manager import ConnectionManager
-from tools.reporting.reporting_tools import ReportingTools, ChartSpec
 
 try:
     from monitoring.wrappers.tools import trace_tool
@@ -36,13 +34,15 @@ class DatabaseTools(AskUserMixin):
         self.available_connections = available_connections or []
         self.on_event = on_event
         self.charts_proposed: list[dict] = []
+        self.dashboards_created: list[dict] = []
         self.query_history: list[dict] = []
         self.ask_user_source = "database_agent"
-        self.visualization_service = visualization_service
-        self.dashboard_service = dashboard_service
+        self.visualization_service = visualization_service or VisualizationService(output_dir=reports_dir)
+        self.dashboard_service = dashboard_service or DashboardService(output_dir=reports_dir)
         self.workspace_id = workspace_id
         self.reports_dir = reports_dir
         self.last_query_rows: list[dict] = []
+        self.last_query_columns: list[Any] = []
 
     def list_available_connections(self) -> list[dict]:
         """
@@ -98,16 +98,6 @@ class DatabaseTools(AskUserMixin):
                     {"$limit": 20}
                 ]
             }
-
-        Returns normalized results:
-        {
-            "success": True/False,
-            "columns": [{"name": "..."}, ...],
-            "rows": [{...}, ...],
-            "row_count": N,
-            "truncated": True/False,
-            "execution_time_ms": N
-        }
         """
         try:
             conn_info, adapter = await self.connection_manager.get_adapter(connection_id)
@@ -116,7 +106,6 @@ class DatabaseTools(AskUserMixin):
 
         db_type = conn_info.get("db_type")
 
-        # Type validation: ensure query representation matches connection type
         if db_type == "postgresql":
             if "pipeline" in query and "statement" not in query and "sql" not in query:
                 return {
@@ -136,8 +125,8 @@ class DatabaseTools(AskUserMixin):
 
         if result.get("success"):
             self.last_query_rows = list(result.get("rows") or [])
+            self.last_query_columns = list(result.get("columns") or [])
 
-        # Record query history for the agent's findings
         self.query_history.append({
             "connection_id": connection_id,
             "db_type": db_type,
@@ -166,69 +155,120 @@ class DatabaseTools(AskUserMixin):
         category: Optional[str] = None,
     ) -> dict[str, Any]:
         """
-        Propose and generate an interactive visualization based on actual query data.
-        - chart_type: "bar", "line", "scatter", "pie", or "donut"
+        Propose a visualization specification based on database query data.
+        Returns a validated specification and chart_id before rendering.
+        - chart_type: "bar", "line", "scatter3d", "surface", "pie", "histogram", "box", "heatmap"
         - title: Plain descriptive title for the chart
         - x_axis: Column/field name representing the independent axis
         - y_axis: Column/field name representing the numerical measure
         - category: Optional series/category column name
         """
-        chart_type_norm = (chart_type or "bar").lower().strip()
-        if chart_type_norm in ("donut", "pie"):
-            chart_type_norm = "pie"
-            spec_obj = ChartSpec(file_id="db_query", chart_type="pie", title=title, label_column=x_axis, value_column=y_axis)
-        elif chart_type_norm in ("scatter", "scatter3d"):
-            chart_type_norm = "scatter3d"
-            spec_obj = ChartSpec(file_id="db_query", chart_type="scatter3d", title=title, x_column=x_axis, y_column=y_axis, z_column=category or y_axis)
-        elif category:
-            spec_obj = ChartSpec(file_id="db_query", chart_type=chart_type_norm, title=title, label_column=x_axis, series_column=category, value_column=y_axis)
-        else:
-            spec_obj = ChartSpec(file_id="db_query", chart_type=chart_type_norm, title=title, label_column=x_axis, value_columns=[y_axis])
+        cols = [c["name"] if isinstance(c, dict) else str(c) for c in (self.last_query_columns or [])]
+        if not cols and self.last_query_rows:
+            cols = list(self.last_query_rows[0].keys())
 
-        cid = f"chart_{chart_type_norm}_{uuid.uuid4().hex[:10]}"
-        safe_title = re.sub(r"[^0-9a-zA-Z_-]", "_", title)[:40].strip("_") or "chart"
-        chart_folder = os.path.join(self.reports_dir, date.today().isoformat(), f"{cid}_{safe_title}")
-        os.makedirs(chart_folder, exist_ok=True)
-        chart_path = os.path.join(chart_folder, "chart.html")
+        proposal = self.visualization_service.propose_visualization(
+            chart_type=chart_type,
+            title=title,
+            x_axis=x_axis,
+            y_axis=y_axis,
+            category=category,
+            connection_id=connection_id,
+            available_columns=cols or None,
+        )
+        if proposal.get("status") == "error":
+            return proposal
 
-        # Render HTML from the query rows if available
-        rendered = False
+        # Automatically render and stage if query data is ready
         if self.last_query_rows:
-            try:
-                df = pd.DataFrame(self.last_query_rows)
-                sec = ReportingTools._render_section(df, spec_obj)
-                html_content = ReportingTools._render_html(title, [sec], source_count=1)
-                with open(chart_path, "w", encoding="utf-8") as f:
-                    f.write(html_content)
-                rendered = True
-                logger.info("DatabaseTools: rendered chart HTML at %s (%d bytes)", chart_path, len(html_content))
-            except Exception:
-                logger.exception("DatabaseTools: failed to render chart HTML from query rows")
+            created = self.visualization_service.create_visualization(
+                spec=proposal["specification"],
+                data=self.last_query_rows,
+                workspace_id=self.workspace_id,
+            )
+            chart_record = {**created, "location": created["location"], "chart_id": created["chart_id"]}
+            self.charts_proposed.append(chart_record)
+            return {
+                "status": "accepted",
+                "chart_id": created["chart_id"],
+                "specification": created["specification"],
+                "message": f"Visualization '{title}' ({created['chart_type']}) proposed and staged as artifact with chart_id '{created['chart_id']}'.",
+            }
 
-        spec = {
-            "chart_id": cid,
-            "connection_id": connection_id,
-            "chart_type": chart_type_norm,
-            "title": title,
-            "x_axis": x_axis,
-            "y_axis": y_axis,
-            "category": category,
-            "location": chart_path,
+        self.charts_proposed.append(proposal["specification"])
+        return proposal
+
+    @trace_tool(name="create_visualization", component="tool.database.create_visualization")
+    def create_visualization(
+        self,
+        chart_id: Optional[str] = None,
+        chart_type: Optional[str] = None,
+        title: Optional[str] = None,
+        x_axis: Optional[str] = None,
+        y_axis: Optional[str] = None,
+        category: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """
+        Create, render, and stage an artifact visualization from the query results.
+        Pass the proposed chart_id or specify chart_type, title, and axis mappings.
+        """
+        if not self.last_query_rows:
+            return {"status": "error", "error": "No query data available to visualize. Execute a query first."}
+
+        spec = {}
+        if chart_id:
+            staged = self.visualization_service.get_by_id(chart_id)
+            if staged and staged.spec:
+                spec = dict(staged.spec)
+            else:
+                for c in self.charts_proposed:
+                    if c.get("chart_id") == chart_id:
+                        spec = dict(c.get("specification", c))
+                        break
+
+        created = self.visualization_service.create_visualization(
+            spec=spec or None,
+            data=self.last_query_rows,
+            workspace_id=self.workspace_id,
+            chart_id=chart_id,
+            title=title,
+            chart_type=chart_type,
+            x_axis=x_axis,
+            y_axis=y_axis,
+            category=category,
+        )
+        chart_record = {**created, "location": created["location"], "chart_id": created["chart_id"]}
+        self.charts_proposed.append(chart_record)
+        return {
+            "status": "created",
+            "chart_id": created["chart_id"],
+            "title": created["title"],
+            "chart_type": created["chart_type"],
+            "specification": created.get("specification"),
         }
 
-        if self.visualization_service and rendered and os.path.isfile(chart_path):
-            staged = self.visualization_service.stage_chart(
-                workspace_id=self.workspace_id,
-                title=title,
-                chart_type=chart_type_norm,
-                location=chart_path,
-                chart_id=cid,
-                spec=spec,
-            )
-            chart_record = {**staged, "location": chart_path, "chart_id": cid}
-            self.charts_proposed.append(chart_record)
-            return {"status": "accepted", "specification": staged}
+    @trace_tool(name="build_live_dashboard", component="tool.database.build_live_dashboard")
+    async def build_live_dashboard(self, connection_id: str, request: str) -> dict[str, Any]:
+        """
+        Build a persistent LIVE dashboard with real-time charts on one of the user's connected databases (PostgreSQL or MongoDB).
+        Use ONLY when the user explicitly asks to build or create a dashboard.
+        """
+        if self.connection_manager.database_access is None or not self.available_connections:
+            return {"error": "No databases are connected to this workspace. Ask the user to connect one first."}
 
-        self.charts_proposed.append(spec)
-        return {"status": "accepted", "specification": spec}
+        try:
+            conn_info, conn_str = await self.connection_manager.database_access.resolve(connection_id)
+        except LookupError as exc:
+            return {"error": str(exc)}
 
+        result = await self.dashboard_service.build_live_dashboard(
+            connection_id=connection_id,
+            request=request,
+            connection_info=conn_info,
+            connection_string=conn_str,
+            workspace_id=self.workspace_id,
+            on_event=self.on_event,
+        )
+        if result.get("status") == "created":
+            self.dashboards_created.append(result)
+        return result

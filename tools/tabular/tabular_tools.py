@@ -63,7 +63,7 @@ class TabularTools(AskUserMixin):
         self.visualization_service = visualization_service or VisualizationService(output_dir=reports_dir)
         self.table_service = table_service or TableArtifactService(root_dir=self.root_dir or "data/parquet")
         self.file_service = file_service
-        self.dashboard_service = dashboard_service
+        self.dashboard_service = dashboard_service or DashboardService(output_dir=reports_dir)
         self.chart_capacity_checker = chart_capacity_checker
 
     def _check_assigned(self, file_id: str) -> None:
@@ -313,32 +313,29 @@ class TabularTools(AskUserMixin):
                 continue
 
             try:
-                chart_id = new_artifact_id(f"chart_{spec_kwargs['chart_type']}")
-                folder_name = f"{chart_id}_{spec_kwargs['title'][:30]}"
-                location = self.reporting.render_single_chart(
-                    self.workspace_id, ChartSpec(**spec_kwargs), name=folder_name,
+                df = None
+                if self.storage:
+                    path = self._artifact_path(spec_kwargs["file_id"])
+                    if path and self.storage.exists(path):
+                        df = self.storage.read(path)
+
+                created = self.visualization_service.create_visualization(
+                    spec=spec_kwargs,
+                    data=df,
+                    workspace_id=self.workspace_id,
+                    storage_root=self.root_dir,
                 )
             except Exception as exc:
+                logger.exception("create_visualizations failed for chart %s: %s", spec_kwargs.get("title"), exc)
                 errors.append({
                     "index": index, "requested_file_id": requested_file_id,
                     "error": f"chart generation failed: {exc}",
                 })
                 continue
 
-            staged_meta = self.visualization_service.stage_chart(
-                workspace_id=self.workspace_id,
-                title=spec_kwargs["title"],
-                chart_type=spec_kwargs["chart_type"],
-                location=location,
-                chart_id=chart_id,
-                artifact_file_id=spec_kwargs["file_id"],
-                spec=spec_kwargs,
-            )
-            # Retain location for investigation persistence
-            chart_record = {**staged_meta, "location": location}
+            chart_record = {**created, "location": created["location"], "chart_id": created["chart_id"]}
             self.charts_created.append(chart_record)
-            # Lean metadata returned to the LLM agent turn
-            charts.append(staged_meta)
+            charts.append(created)
 
         if not visualizations:
             status = "error"
@@ -351,6 +348,77 @@ class TabularTools(AskUserMixin):
             status = "error"
 
         return {"status": status, "charts": charts, "errors": errors}
+
+    def _artifact_path(self, file_id: str) -> Optional[str]:
+        if not self.root_dir:
+            return None
+        try:
+            from sandbox.path_resolver import get_parquet_path, InvalidArtifactIdError
+            return get_parquet_path(self.root_dir, self.workspace_id, file_id)
+        except Exception:
+            return None
+
+    @trace_tool(name="propose_visualization", component="tool.tabular.propose_visualization")
+    def propose_visualization(
+        self,
+        file_id: str,
+        chart_type: str,
+        title: str,
+        label_column: Optional[str] = None,
+        value_columns: Optional[list[str]] = None,
+        time_column: Optional[str] = None,
+        series_column: Optional[str] = None,
+        value_column: Optional[str] = None,
+        x_column: Optional[str] = None,
+        y_column: Optional[str] = None,
+        z_column: Optional[str] = None,
+        bins: Optional[int] = None,
+    ) -> dict:
+        """
+        Validate and propose a chart specification for a saved artifact.
+        Call this to verify column mappings and get a proposed chart_id before creating charts.
+        """
+        entry = self.saved_artifacts.get(file_id)
+        cols = entry.get("columns", []) if entry else None
+        return self.visualization_service.propose_visualization(
+            chart_type=chart_type,
+            title=title,
+            label_column=label_column,
+            value_columns=value_columns,
+            time_column=time_column,
+            series_column=series_column,
+            value_column=value_column,
+            x_column=x_column,
+            y_column=y_column,
+            z_column=z_column,
+            bins=bins,
+            file_id=file_id,
+            available_columns=cols,
+        )
+
+    @trace_tool(name="build_live_dashboard", component="tool.tabular.build_live_dashboard")
+    async def build_live_dashboard(
+        self,
+        title: str,
+        visualizations: Optional[list[dict]] = None,
+        connection_id: Optional[str] = None,
+        request: Optional[str] = None,
+    ) -> dict:
+        """
+        Build a persistent dashboard.
+        - For tabular file results: provide title and visualizations list to create an auto-refreshing dashboard bundle.
+        - For connected databases: provide connection_id and request.
+        """
+        if connection_id and request and self.dashboard_service:
+            return await self.dashboard_service.build_live_dashboard(
+                connection_id=connection_id,
+                request=request,
+                workspace_id=self.workspace_id,
+            )
+        if visualizations:
+            res = await self.create_visualizations(visualizations=visualizations, dashboard_title=title)
+            return res.get("dashboard", res)
+        return {"status": "error", "error": "Either (title, visualizations) or (connection_id, request) must be provided."}
 
     def _validate_chart_request(self, raw) -> tuple:
         if not isinstance(raw, dict):

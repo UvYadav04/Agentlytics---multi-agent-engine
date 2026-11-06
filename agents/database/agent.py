@@ -60,6 +60,8 @@ class DatabaseAgent:
                 self.tools.inspect_schema,
                 self.tools.execute_query,
                 self.tools.propose_visualization,
+                self.tools.create_visualization,
+                self.tools.build_live_dashboard,
                 self.tools.ask_user,
             ],
             system_message=SYSTEM_MESSAGE,
@@ -80,6 +82,7 @@ class DatabaseAgent:
     ) -> DatabaseFindings:
         await self.agent.on_reset(CancellationToken())
         self.tools.charts_proposed = []
+        self.tools.dashboards_created = []
         self.tools.query_history = []
         self.tools.on_event = on_event
         self.tools.ask_user_callback = ask_user
@@ -161,6 +164,7 @@ class DatabaseAgent:
             query_results=list(self.tools.query_history),
             charts=list(self.tools.charts_proposed),
             follow_up_questions=follow_up_questions,
+            dashboards=list(self.tools.dashboards_created),
         )
 
     @staticmethod
@@ -177,6 +181,8 @@ class DatabaseAgent:
         "inspect_schema": "Inspecting database schema",
         "execute_query": "Executing database query",
         "propose_visualization": "Configuring visualization",
+        "create_visualization": "Generating visualization",
+        "build_live_dashboard": "Building a live dashboard",
         "ask_user": "Asking you a question",
     }
 

@@ -1,8 +1,7 @@
 import logging
-import uuid
 from typing import Optional
 
-from tools.dashboard.live_builder import LiveDashboardBuildError, LiveDashboardBuilder
+from shared.services import DashboardService
 
 logger = logging.getLogger("tools.dashboard.live_tool")
 
@@ -36,37 +35,29 @@ class LiveDashboardMixin:
         except LookupError as exc:
             return {"error": str(exc)}
 
-        builder = LiveDashboardBuilder(on_event=getattr(self, "on_event", None))
-        try:
-            spec = await builder.build(request, connection, connection_string)
-        except LiveDashboardBuildError as exc:
-            logger.info("live dashboard build failed for connection %s: %s", connection_id, exc)
-            return {"error": str(exc)}
-
-        reference = f"live-dashboard-{uuid.uuid4().hex[:12]}"
         dashboard_service = getattr(self, "dashboard_service", None)
-        if dashboard_service:
-            dashboard_service.stage_live_dashboard(
-                workspace_id=getattr(self, "workspace_id", "default"),
-                title=spec.get("title", "Live Dashboard"),
-                spec=spec,
-                connection_id=connection["id"],
-                dashboard_id=reference,
-            )
-        self.result_collector.add_artifact(
-            reference, kind="live_dashboard", spec=spec, connection_id=connection["id"],
+        if dashboard_service is None:
+            dashboard_service = DashboardService()
+            self.dashboard_service = dashboard_service
+
+        result = await dashboard_service.build_live_dashboard(
+            connection_id=connection_id,
+            request=request,
+            connection_info=connection,
+            connection_string=connection_string,
+            workspace_id=getattr(self, "workspace_id", "default"),
+            on_event=getattr(self, "on_event", None),
         )
-        return {
-            "status": "created",
-            "title": spec["title"],
-            "database": connection["name"],
-            "time_window": spec["time_window"],
-            "charts": [
-                {"title": chart["title"], "chart_type": chart["chart_type"], "rows_now": chart.get("row_count")}
-                for chart in spec["charts"]
-            ],
-            "skipped_charts": [d["title"] for d in spec["dropped"]],
-        }
+
+        if result.get("status") == "created" and hasattr(self, "result_collector"):
+            self.result_collector.add_artifact(
+                result["dashboard_id"],
+                kind="live_dashboard",
+                spec=result,
+                connection_id=connection["id"],
+            )
+
+        return result
 
 
 LiveDashboardMixin.build_live_dashboard.__doc__ = BUILD_LIVE_DASHBOARD_DESCRIPTION

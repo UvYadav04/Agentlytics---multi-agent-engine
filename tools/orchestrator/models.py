@@ -51,6 +51,7 @@ class DatabaseFindings:
     query_results: list = field(default_factory=list)
     charts: list = field(default_factory=list)
     follow_up_questions: list = field(default_factory=list)
+    dashboards: list = field(default_factory=list)
 
 
 @dataclass
@@ -123,6 +124,16 @@ class FinalResultCollector:
                 y_axis=chart.get("y_axis"),
                 category=chart.get("category"),
             )
+        for dashboard in getattr(findings, "dashboards", []) or []:
+            ref = dashboard.get("dashboard_id")
+            if ref:
+                self.add_artifact(
+                    ref,
+                    kind="live_dashboard",
+                    spec=dashboard,
+                    connection_id=connection_id,
+                    source_tool=source_tool,
+                )
 
 
 class InvestigationCancelled(Exception):

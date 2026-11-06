@@ -55,7 +55,9 @@ class TabularAgent:
             tools=[
                 self.tools.list_allowed_files,
                 self.tools.run_python,
+                self.tools.propose_visualization,
                 self.tools.create_visualizations,
+                self.tools.build_live_dashboard,
                 self.tools.ask_user,
             ],
             system_message=get_system_message(direct_route),
@@ -191,7 +193,9 @@ class TabularAgent:
     _FRIENDLY_TOOL_NAMES = {
         "list_allowed_files": "Listing files",
         "run_python": "Executing a Python script",
+        "propose_visualization": "Configuring visualization",
         "create_visualizations": "Generating visualizations",
+        "build_live_dashboard": "Building a live dashboard",
         "ask_user": "Asking you a question",
     }
 
