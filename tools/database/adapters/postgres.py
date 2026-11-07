@@ -26,10 +26,11 @@ class PostgresAdapter(BaseDatabaseAdapter):
 
             if table_or_collection:
                 target = table_or_collection.strip().lower()
+                bare_target = target.split(".")[-1]
                 matched = next(
                     (
                         obj for obj in result.objects
-                        if obj.get("name", "").lower() == target
+                        if obj.get("name", "").lower() in (target, bare_target)
                         or f"{obj.get('schema', '').lower()}.{obj.get('name', '').lower()}" == target
                     ),
                     None,

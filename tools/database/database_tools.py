@@ -61,6 +61,38 @@ class DatabaseTools(AskUserMixin):
             for c in self.available_connections
         ]
 
+    async def _resolve_adapter(self, connection_id: str):
+        clean_id = (connection_id or "").strip().strip("'\"")
+        try:
+            return await self.connection_manager.get_adapter(clean_id)
+        except LookupError:
+            # 1. Check if clean_id matches connection name (case-insensitive)
+            for c in self.available_connections:
+                if c.get("name") and str(c.get("name")).lower() == clean_id.lower():
+                    matched_id = c.get("connection_id")
+                    if matched_id:
+                        logger.info("Resolved connection_id '%s' by name -> '%s'", clean_id, matched_id)
+                        return await self.connection_manager.get_adapter(matched_id)
+
+            # 2. Check if clean_id is a prefix or substring of an available connection ID
+            if len(clean_id) >= 6:
+                for c in self.available_connections:
+                    cid = c.get("connection_id") or ""
+                    if cid.startswith(clean_id) or clean_id in cid:
+                        logger.info("Resolved partial connection_id '%s' -> '%s'", clean_id, cid)
+                        return await self.connection_manager.get_adapter(cid)
+
+            # 3. Fallback if exactly 1 connection is available in the workspace
+            if len(self.available_connections) == 1:
+                fallback_id = self.available_connections[0].get("connection_id")
+                if fallback_id and fallback_id != clean_id:
+                    logger.warning(
+                        "connection_id '%s' not found, falling back to sole available connection '%s'",
+                        clean_id, fallback_id,
+                    )
+                    return await self.connection_manager.get_adapter(fallback_id)
+            raise
+
     @trace_tool(name="inspect_database_schema", component="tool.database.inspect_schema", step_type="database")
     async def inspect_schema(
         self,
@@ -80,7 +112,7 @@ class DatabaseTools(AskUserMixin):
         """
         target = table_or_collection or table or collection
         try:
-            _, adapter = await self.connection_manager.get_adapter(connection_id)
+            _, adapter = await self._resolve_adapter(connection_id)
             return await adapter.inspect_schema(table_or_collection=target)
         except LookupError as exc:
             return {"success": False, "error": str(exc)}
@@ -89,7 +121,7 @@ class DatabaseTools(AskUserMixin):
             return {"success": False, "error": f"Failed to inspect schema: {exc}"}
 
     @trace_tool(name="execute_database_query", component="tool.database.execute_query", step_type="database")
-    async def execute_query(self, connection_id: str, query: dict) -> dict[str, Any]:
+    async def execute_query(self, connection_id: str, query: Any) -> dict[str, Any]:
         """
         Execute a read-only query directly against an authorized database connection.
 
@@ -110,8 +142,18 @@ class DatabaseTools(AskUserMixin):
                 ]
             }
         """
+        if isinstance(query, str):
+            try:
+                import json
+                query = json.loads(query)
+            except Exception:
+                query = {"statement": query}
+
+        if not isinstance(query, dict):
+            return {"success": False, "error": f"Query must be a JSON object, got {type(query).__name__}."}
+
         try:
-            conn_info, adapter = await self.connection_manager.get_adapter(connection_id)
+            conn_info, adapter = await self._resolve_adapter(connection_id)
         except LookupError as exc:
             return {"success": False, "error": str(exc)}
 

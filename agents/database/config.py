@@ -20,7 +20,8 @@ Rules for PostgreSQL:
 
 Rules for MongoDB:
 - Generate read-only MongoDB aggregation pipelines.
-- Pass query as: {"collection": "<collection_name>", "pipeline": [{"$match": ...}, {"$group": ...}, ...]}
+- Pass query as: {"collection": "<collection_name>", "pipeline": [{"$match": ...}, {"$group": ...}, ...]}.
+- Use bare collection names (e.g. "messages", NOT "data_analyzer.messages").
 - Use only allowed aggregation stages ($match, $group, $project, $sort, $limit, $skip, $unwind, $lookup, etc.).
 - Never use $out, $merge, or admin commands.
 

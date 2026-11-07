@@ -23,9 +23,16 @@ from tools.orchestrator.orchestrator_tools import OrchestratorTools
 
 try:
     from monitoring.wrappers.agents import trace_agent
+    from monitoring.wrappers.base import trace_span
+    from monitoring.sanitizer import safe_serialize
 except Exception:
+    from contextlib import nullcontext
     def trace_agent(*args, **kwargs):
         return lambda fn: fn
+    def trace_span(*args, **kwargs):
+        return nullcontext()
+    def safe_serialize(x):
+        return x
 
 _AGENT_NAME = "orchestrator_agent"
 
@@ -68,35 +75,57 @@ def _wrap_with_next_capabilities(func, holder: "_CapabilityHolder"):
             holder.value = list(kwargs.pop("next_capabilities", None) or [])
             t0 = time.monotonic()
             outcome = "ok"
-            with _tracer.start_as_current_span(f"tool.{tool_name}") as span:
-                try:
-                    result = await func(**kwargs)
-                except Exception as exc:
-                    outcome = "error"
-                    span.record_exception(exc)
-                    if _ERROR_STATUS is not None:
-                        span.set_status(_ERROR_STATUS)
-                    raise
-                finally:
-                    _tool_duration.record((time.monotonic() - t0) * 1000, {"tool": tool_name, "outcome": outcome})
-                return result
+            step_type = "agent" if tool_name.startswith("invoke_") else "tool"
+            with trace_span(
+                name=tool_name,
+                component=f"orchestrator.tool.{tool_name}",
+                step_type=step_type,
+                inputs=safe_serialize(kwargs),
+            ) as m_span:
+                with _tracer.start_as_current_span(f"tool.{tool_name}") as span:
+                    try:
+                        result = await func(**kwargs)
+                        if m_span and hasattr(m_span, "set_output"):
+                            m_span.set_output("result", safe_serialize(result))
+                        return result
+                    except Exception as exc:
+                        outcome = "error"
+                        span.record_exception(exc)
+                        if _ERROR_STATUS is not None:
+                            span.set_status(_ERROR_STATUS)
+                        if m_span and hasattr(m_span, "set_output"):
+                            m_span.set_output("error", str(exc))
+                        raise
+                    finally:
+                        _tool_duration.record((time.monotonic() - t0) * 1000, {"tool": tool_name, "outcome": outcome})
     else:
         def wrapper(**kwargs):
             holder.value = list(kwargs.pop("next_capabilities", None) or [])
             t0 = time.monotonic()
             outcome = "ok"
-            with _tracer.start_as_current_span(f"tool.{tool_name}") as span:
-                try:
-                    result = func(**kwargs)
-                except Exception as exc:
-                    outcome = "error"
-                    span.record_exception(exc)
-                    if _ERROR_STATUS is not None:
-                        span.set_status(_ERROR_STATUS)
-                    raise
-                finally:
-                    _tool_duration.record((time.monotonic() - t0) * 1000, {"tool": tool_name, "outcome": outcome})
-                return result
+            step_type = "agent" if tool_name.startswith("invoke_") else "tool"
+            with trace_span(
+                name=tool_name,
+                component=f"orchestrator.tool.{tool_name}",
+                step_type=step_type,
+                inputs=safe_serialize(kwargs),
+            ) as m_span:
+                with _tracer.start_as_current_span(f"tool.{tool_name}") as span:
+                    try:
+                        result = func(**kwargs)
+                        if m_span and hasattr(m_span, "set_output"):
+                            m_span.set_output("result", safe_serialize(result))
+                        return result
+                    except Exception as exc:
+                        outcome = "error"
+                        span.record_exception(exc)
+                        if _ERROR_STATUS is not None:
+                            span.set_status(_ERROR_STATUS)
+                        if m_span and hasattr(m_span, "set_output"):
+                            m_span.set_output("error", str(exc))
+                        raise
+                    finally:
+                        _tool_duration.record((time.monotonic() - t0) * 1000, {"tool": tool_name, "outcome": outcome})
 
     wrapper.__name__ = func.__name__
     wrapper.__signature__ = new_sig

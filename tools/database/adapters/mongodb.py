@@ -26,8 +26,15 @@ class MongoAdapter(BaseDatabaseAdapter):
 
             if table_or_collection:
                 target = table_or_collection.strip().lower()
+                bare_target = target.split(".")[-1]
+                db_name = str(result.database or "").lower()
                 matched = next(
-                    (obj for obj in result.objects if obj.get("name", "").lower() == target),
+                    (
+                        obj for obj in result.objects
+                        if obj.get("name", "").lower() in (target, bare_target)
+                        or (db_name and f"{db_name}.{obj.get('name', '').lower()}" == target)
+                        or (len(bare_target) > 3 and obj.get("name", "").lower().rstrip("s") == bare_target.rstrip("s"))
+                    ),
                     None,
                 )
                 if not matched:
@@ -108,6 +115,11 @@ class MongoAdapter(BaseDatabaseAdapter):
                 "database_type": "mongodb",
                 "error": "The MongoDB query must specify a 'collection' name.",
             }
+
+        # Normalize collection name: strip database prefix if passed like "data_analyzer.messages" or "db.messages"
+        collection = collection.strip()
+        if "." in collection:
+            collection = collection.split(".")[-1]
         if pipeline is None or not isinstance(pipeline, list):
             return {
                 "success": False,
