@@ -1,7 +1,11 @@
 import asyncio
 import logging
+import re
 import time
+from datetime import datetime
 from typing import Any
+
+from bson import ObjectId
 
 from shared.external_db.errors import ConnectionStringError, DatabaseInspectionError
 from shared.external_db.queries import QueryResult, QueryValidationError, run_mongo_queries
@@ -9,6 +13,40 @@ from shared.external_db.service import inspect_database
 from tools.database.adapters.base import BaseDatabaseAdapter
 
 logger = logging.getLogger("tools.database.adapters.mongodb")
+
+ISO_DATE_REGEX = re.compile(r"^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$")
+
+
+def _parse_iso(val: Any) -> Any:
+    if isinstance(val, str) and ISO_DATE_REGEX.match(val):
+        try:
+            clean = val.replace("Z", "+00:00")
+            return datetime.fromisoformat(clean)
+        except Exception:
+            return val
+    return val
+
+
+def _normalize_pipeline(obj: Any) -> Any:
+    """Recursively converts Extended JSON date/oid operators and ISO string dates into real BSON objects."""
+    if isinstance(obj, dict):
+        if len(obj) == 1 and "$date" in obj and isinstance(obj["$date"], str):
+            return _parse_iso(obj["$date"])
+        if len(obj) == 1 and "$oid" in obj and isinstance(obj["$oid"], str) and ObjectId.is_valid(obj["$oid"]):
+            return ObjectId(obj["$oid"])
+        res = {}
+        for k, v in obj.items():
+            if k in ("$gte", "$gt", "$lte", "$lt", "$eq") and isinstance(v, str):
+                dt = _parse_iso(v)
+                res[k] = dt if isinstance(dt, datetime) else v
+            elif k == "_id" and isinstance(v, str) and ObjectId.is_valid(v):
+                res[k] = ObjectId(v)
+            else:
+                res[k] = _normalize_pipeline(v)
+        return res
+    elif isinstance(obj, list):
+        return [_normalize_pipeline(x) for x in obj]
+    return obj
 
 
 class MongoAdapter(BaseDatabaseAdapter):
@@ -128,7 +166,8 @@ class MongoAdapter(BaseDatabaseAdapter):
             }
 
         start = time.perf_counter()
-        query_payload = {"collection": collection, "pipeline": pipeline}
+        normalized_pipeline = _normalize_pipeline(pipeline)
+        query_payload = {"collection": collection, "pipeline": normalized_pipeline}
         if database:
             query_payload["database"] = database
 
