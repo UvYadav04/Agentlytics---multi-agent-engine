@@ -2,7 +2,7 @@ import asyncio
 import logging
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from bson import ObjectId
@@ -21,7 +21,10 @@ def _parse_iso(val: Any) -> Any:
     if isinstance(val, str) and ISO_DATE_REGEX.match(val):
         try:
             clean = val.replace("Z", "+00:00")
-            return datetime.fromisoformat(clean)
+            dt = datetime.fromisoformat(clean)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
         except Exception:
             return val
     return val
@@ -36,9 +39,14 @@ def _normalize_pipeline(obj: Any) -> Any:
             return ObjectId(obj["$oid"])
         res = {}
         for k, v in obj.items():
-            if k in ("$gte", "$gt", "$lte", "$lt", "$eq") and isinstance(v, str):
+            if k in ("$gte", "$gt", "$lte", "$lt", "$eq", "$ne") and isinstance(v, str):
                 dt = _parse_iso(v)
                 res[k] = dt if isinstance(dt, datetime) else v
+            elif k in ("$in", "$nin") and isinstance(v, list):
+                res[k] = [
+                    _parse_iso(item) if (isinstance(item, str) and ISO_DATE_REGEX.match(item)) else _normalize_pipeline(item)
+                    for item in v
+                ]
             elif k == "_id" and isinstance(v, str) and ObjectId.is_valid(v):
                 res[k] = ObjectId(v)
             else:

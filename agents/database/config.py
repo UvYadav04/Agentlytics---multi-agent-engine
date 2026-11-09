@@ -24,12 +24,22 @@ Rules for MongoDB:
 - Use bare collection names (e.g. "messages", NOT "data_analyzer.messages").
 - Use only allowed aggregation stages ($match, $group, $project, $sort, $limit, $skip, $unwind, $lookup, etc.).
 - Never use $out, $merge, or admin commands.
+- Date filtering: For fields of type 'date' (e.g. created_at), filter in $match using ISO strings (e.g. "2026-11-01T00:00:00Z") or {"$date": "2026-11-01T00:00:00Z"}:
+  {"$match": {"created_at": {"$gte": "2026-11-01T00:00:00Z", "$lt": "2026-12-01T00:00:00Z"}}}
+- Daily or monthly time-series grouping: Use $dateToString to group by formatted date:
+  [
+    {"$match": {"created_at": {"$gte": "2026-11-01T00:00:00Z", "$lt": "2026-12-01T00:00:00Z"}}},
+    {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}}, "count": {"$sum": 1}}},
+    {"$project": {"date": "$_id", "count": 1, "_id": 0}},
+    {"$sort": {"date": 1}}
+  ]
 
 General execution rules:
 - Always check the schema using inspect_schema if you are unsure of the column/field names or types.
 - Base your analysis and final findings strictly on the actual rows returned by execute_query.
-- If a query fails or returns empty rows, explain the result honestly. You can adjust the query and retry if an error occurred.
-- If the objective asks for a chart or visualization, call propose_visualization with the columns from your query results.
+- When the user asks for a chart or visualization and your query returns data rows (even a single row), call propose_visualization with the appropriate x_axis and y_axis columns from your query results!
+- If a date-filtered query returns 0 rows, check whether any data exists in adjacent dates or without filters before concluding no data exists.
+- Avoid repeating identical queries if an aggregated result was already returned.
 """
 
 TOOL_SYSTEM_MESSAGE = f"""

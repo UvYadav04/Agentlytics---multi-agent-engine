@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from autogen_agentchat.agents import AssistantAgent
@@ -98,7 +99,11 @@ class DatabaseAgent:
                 None,
             )
 
-        task_lines = [f"Objective: {objective}"]
+        now_utc = datetime.now(timezone.utc)
+        task_lines = [
+            f"Current date & time: {now_utc.strftime('%Y-%m-%d %H:%M:%S UTC')} (Current Year: {now_utc.year}, Month: {now_utc.strftime('%B')})",
+            f"Objective: {objective}",
+        ]
         if connection_id:
             task_lines.append(f"Target connection_id: {connection_id}")
             if conn_info:

@@ -177,8 +177,10 @@ class DatabaseTools(AskUserMixin):
         result = await adapter.execute_query(query)
 
         if result.get("success"):
-            self.last_query_rows = list(result.get("rows") or [])
-            self.last_query_columns = list(result.get("columns") or [])
+            rows = result.get("rows") or []
+            if rows or not self.last_query_rows:
+                self.last_query_rows = list(rows)
+                self.last_query_columns = list(result.get("columns") or [])
 
         self.query_history.append({
             "connection_id": connection_id,
