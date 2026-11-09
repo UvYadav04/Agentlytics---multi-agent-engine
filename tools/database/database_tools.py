@@ -4,7 +4,7 @@ import re
 import uuid
 from typing import Any, Optional
 
-import pandas as pd
+
 
 from shared.services import DashboardService, VisualizationService
 from tools.ask_user import AskUserMixin
