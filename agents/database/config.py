@@ -6,9 +6,7 @@ from config import get_settings
 _SHARED_RULES = """
 Your capabilities:
 1. List authorized database connections with list_available_connections.
-2. Inspect table schemas and collection structures with inspect_schema(connection_id, table_or_collection=None).
-   - If you want an overview of all tables or collections, call inspect_schema(connection_id).
-   - If you need detailed column/field types for a specific table or collection, pass table_or_collection="<name>" (e.g. inspect_schema(connection_id, table_or_collection="investigations")).
+2. Inspect table schemas and collection structures with inspect_schema(connection_id, table_or_collection=None) (fallback only if a table or column is missing from your task context).
 3. Execute read-only queries with execute_query(connection_id, query).
 4. Propose visualizations with propose_visualization(connection_id, ...) based on actual query data.
 
@@ -35,9 +33,11 @@ Rules for MongoDB:
   ]
 
 General execution rules:
-- Schema discovery first: Always inspect schema before querying!
-  1. Call inspect_schema(connection_id) to get an overview of available table or collection names and row counts.
-  2. Call inspect_schema(connection_id, table_or_collection="<target>") to view the exact column/field names and data types for the specific table or collection you plan to query. Never guess column or field names.
+- Fast query execution with provided schema:
+  - The database schema (tables/collections and columns/fields with data types) is ALREADY provided directly in your task context!
+  - Write and execute your read-only query IMMEDIATELY with execute_query(connection_id, query) based on the provided schema.
+  - DO NOT make redundant inspect_schema calls if the table and fields are already present in the provided schema context.
+  - Only call inspect_schema as an optional fallback if a table or column you need is not listed in the provided schema.
 - Base your analysis and final findings strictly on the actual rows returned by execute_query.
 - When the user asks for a chart or visualization and your query returns data rows (even a single row), call propose_visualization with the appropriate x_axis and y_axis columns from your query results!
 - If a date-filtered query returns 0 rows, check whether any data exists in adjacent dates or without filters before concluding no data exists.

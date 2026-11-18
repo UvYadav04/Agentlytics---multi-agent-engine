@@ -29,11 +29,16 @@ class ConnectionManager:
         connection_info, connection_string = await self.database_access.resolve(connection_id)
         db_type = connection_info.get("db_type")
         database = connection_info.get("database")
+        cached_schema = connection_info.get("db_schema")
 
         if db_type == "postgresql":
-            adapter = PostgresAdapter(connection_string=connection_string, database=database)
+            adapter = PostgresAdapter(
+                connection_string=connection_string, database=database, cached_inspection=cached_schema,
+            )
         elif db_type == "mongodb":
-            adapter = MongoAdapter(connection_string=connection_string, database=database)
+            adapter = MongoAdapter(
+                connection_string=connection_string, database=database, cached_inspection=cached_schema,
+            )
         else:
             raise LookupError(f"Unsupported database type: '{db_type}'. Supported: 'postgresql', 'mongodb'.")
 

@@ -47,7 +47,7 @@ class DatabaseTools(AskUserMixin):
     def list_available_connections(self) -> list[dict]:
         """
         List all authorized database connections available in this investigation.
-        Returns safe metadata: connection_id, name, db_type, database, and top tables/collections.
+        Returns safe metadata: connection_id, name, db_type, database, top tables/collections, and schema.
         Never returns connection strings or passwords.
         """
         return [
@@ -57,6 +57,7 @@ class DatabaseTools(AskUserMixin):
                 "db_type": c.get("db_type"),
                 "database": c.get("database"),
                 "objects": c.get("objects", [])[:40],
+                "schema": c.get("schema", {}),
             }
             for c in self.available_connections
         ]

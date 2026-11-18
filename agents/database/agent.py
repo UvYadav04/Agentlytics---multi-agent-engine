@@ -116,11 +116,22 @@ class DatabaseAgent:
                 objects = conn_info.get("objects", [])
                 if objects:
                     task_lines.append(f"Known tables/collections: {', '.join(objects[:30])}")
+                schema = conn_info.get("schema")
+                if schema:
+                    task_lines.append(
+                        f"Database Schema (tables/collections and their columns/fields with data types):\n{json.dumps(schema, indent=2)}"
+                    )
         else:
             connections = self.tools.list_available_connections()
             task_lines.append(
                 f"Available database connections - use these connection_id and table/collection names directly: {connections}"
             )
+            for c in connections:
+                c_schema = c.get("schema")
+                if c_schema:
+                    task_lines.append(
+                        f"Database Schema for connection '{c.get('name')}' (connection_id='{c.get('connection_id')}'):\n{json.dumps(c_schema, indent=2)}"
+                    )
 
         if constraints:
             task_lines.append(f"Constraints: {constraints}")
