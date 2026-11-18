@@ -44,11 +44,7 @@ _tool_duration = _meter.create_histogram(
     "orchestrator.tool.duration_ms", unit="ms", description="Orchestrator tool call wall time, keyed by tool name",
 )
 
-try:
-    from opentelemetry.trace import Status, StatusCode
-    _ERROR_STATUS = Status(StatusCode.ERROR)
-except ImportError:  # pragma: no cover
-    _ERROR_STATUS = None
+_ERROR_STATUS = None
 
 
 class _CapabilityHolder:
