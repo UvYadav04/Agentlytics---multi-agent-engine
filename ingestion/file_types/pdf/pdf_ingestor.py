@@ -2,7 +2,23 @@ import os
 import uuid
 from typing import Callable, Optional
 
-import pypdf
+try:
+    import pypdf
+except ImportError:
+    try:
+        import pypdfium2
+
+        class _PypdfCompatReader:
+            def __init__(self, path):
+                doc = pypdfium2.PdfDocument(path)
+                self.pages = [None] * len(doc)
+
+        class _PypdfFallbackModule:
+            PdfReader = _PypdfCompatReader
+
+        pypdf = _PypdfFallbackModule()
+    except Exception:
+        pypdf = None
 
 from ingestion.errors import is_size_related_error
 from ingestion.file_types.base import BaseIngestor

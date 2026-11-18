@@ -14,7 +14,7 @@ from llm_provider import LLMProvider, get_settings
 from tools.document.document_tools import DocumentTools
 from tools.orchestrator.models import DocumentFindings, InvestigationCancelled
 from vectordb.chroma_store import ChromaVectorStore
-from vectordb.reranker import DeepInfraReranker
+from vectordb.reranker import CrossEncoderReranker, DeepInfraReranker
 
 try:
     from monitoring.wrappers.agents import trace_agent
@@ -33,7 +33,7 @@ class DocumentAgent:
 
         vector_store = vector_store or ChromaVectorStore()
         if reranker is None:
-            reranker = DeepInfraReranker()
+            reranker = CrossEncoderReranker()
 
         self.tools = DocumentTools(assigned_files, vector_store, reranker=reranker, llm_provider=provider, file_service=file_service)
 

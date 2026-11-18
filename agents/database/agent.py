@@ -35,6 +35,8 @@ class DatabaseAgent:
         workspace_id: str = "default",
         reports_dir: str = "data/reports",
         direct_route: bool = False,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
         **kwargs,
     ):
         self.logger = get_agent_logger("database_agent")
@@ -50,11 +52,13 @@ class DatabaseAgent:
         )
 
         model_config = get_model_config()
+        target_provider = provider or model_config.get("provider")
+        target_model = model or model_config.get("model")
         configured_fallback = get_settings().get("FALLBACK_LLM_PROVIDER")
-        fallback_provider = configured_fallback or ("deepinfra" if model_config.get("provider") != "deepinfra" else "groq")
+        fallback_provider = configured_fallback or ("deepinfra" if target_provider != "deepinfra" else "groq")
         client = LLMProvider(
-            model_config["provider"], fallback_provider=fallback_provider,
-        ).get_client(model_config["model"])
+            target_provider, fallback_provider=fallback_provider,
+        ).get_client(target_model)
 
         self.agent = AssistantAgent(
             name="database_agent",

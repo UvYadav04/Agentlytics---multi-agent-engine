@@ -20,7 +20,7 @@ can fix a vague spec. If the user's request asks to build, create, or keep a das
 a single standalone chart), pass `dashboard_title="<Title>"` to create_visualizations to bundle
 all the charts into an auto-refreshing real-time dashboard. Skip it entirely for a plain numeric/text answer.
 
-Keep print() output short - never print a whole DataFrame; use preview()/describe() instead.
+Always print() the computed answers, aggregated metrics, or table previews (e.g. print(df) or print(preview(df))) so the execution stdout contains the real numbers. Never output placeholder ellipses (...) or ungrounded estimates in your final response.
 """
 
 TOOL_SYSTEM_MESSAGE = f"""

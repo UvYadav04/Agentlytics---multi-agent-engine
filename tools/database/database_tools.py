@@ -130,7 +130,7 @@ class DatabaseTools(AskUserMixin):
             {"statement": "SELECT category, SUM(revenue) AS total_rev FROM sales GROUP BY category LIMIT 50"}
             (Query must be a single read-only SELECT or WITH ... SELECT statement).
 
-        - For MongoDB:
+         - For MongoDB:
             Provide a query object with collection and aggregation pipeline:
             {
                 "collection": "orders",

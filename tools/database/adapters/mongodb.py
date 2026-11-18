@@ -60,7 +60,9 @@ def _normalize_pipeline(obj: Any) -> Any:
 class MongoAdapter(BaseDatabaseAdapter):
     async def inspect_schema(self, table_or_collection: str | None = None) -> dict[str, Any]:
         try:
-            _, result = await inspect_database("mongodb", self.connection_string)
+            if self._cached_inspection is None:
+                _, self._cached_inspection = await inspect_database("mongodb", self.connection_string)
+            result = self._cached_inspection
             if not result.objects:
                 return {
                     "success": True,
@@ -97,7 +99,7 @@ class MongoAdapter(BaseDatabaseAdapter):
                         "name": f.get("name"),
                         "type": f.get("type"),
                     }
-                    for f in raw_fields[:80]
+                    for f in raw_fields
                 ]
                 return {
                     "success": True,
@@ -120,7 +122,7 @@ class MongoAdapter(BaseDatabaseAdapter):
                     "row_count": obj.get("row_count"),
                     "fields": [
                         {"name": f.get("name"), "type": f.get("type")}
-                        for f in raw_fields[:80]
+                        for f in raw_fields
                     ],
                     "total_fields": len(raw_fields),
                 }
@@ -129,7 +131,6 @@ class MongoAdapter(BaseDatabaseAdapter):
                 {
                     "name": obj.get("name"),
                     "row_count": obj.get("row_count"),
-                    "key_fields": [f.get("name") for f in obj.get("fields", [])[:10]],
                     "total_fields": len(obj.get("fields", [])),
                 }
                 for obj in result.objects
@@ -140,7 +141,7 @@ class MongoAdapter(BaseDatabaseAdapter):
                 "database": result.database,
                 "collections": collections_summary,
                 "total_collections": len(result.objects),
-                "instruction": "Call inspect_schema with table_or_collection='<collection_name>' to view detailed fields for a specific collection.",
+                "instruction": "This is an overview of collections in the database. Call inspect_schema with table_or_collection='<collection_name>' to view the complete field names and types for the target collection before querying.",
             }
         except (ConnectionStringError, DatabaseInspectionError, Exception) as exc:
             logger.warning("MongoDB schema inspection error: %s", exc)

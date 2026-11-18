@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -41,7 +42,25 @@ def classify_llm_error(exc: Exception) -> LLMErrorInfo:
 
     message = str(exc).lower()
 
-    if status == 413 or "request too large" in message or "context_length_exceeded" in message or "tpm limit" in message or "token" in message and "limit" in message:
+    # Rate limits (429 or rate limit messages) are transient and retryable with backoff
+    if "ratelimit" in name.lower() or status == 429 or "rate limit" in message:
+        retry_sec = _retry_after_seconds(exc)
+        if retry_sec is None:
+            m = re.search(r"try again in (\d+(?:\.\d+)?)s?", message)
+            if m:
+                retry_sec = float(m.group(1)) + 1.0
+            else:
+                retry_sec = 4.0
+        return LLMErrorInfo(
+            kind="rate_limit",
+            retryable=True,
+            user_message=(
+                f"The AI provider is temporarily rate-limited. Retrying automatically in {retry_sec:.1f}s."
+            ),
+            retry_after_s=retry_sec,
+        )
+
+    if status == 413 or "request too large" in message or "context_length_exceeded" in message:
         return LLMErrorInfo(
             kind="token_limit",
             retryable=False,
@@ -49,17 +68,6 @@ def classify_llm_error(exc: Exception) -> LLMErrorInfo:
                 "The request was too large for the AI provider's token limit. Trimming context "
                 "and retrying automatically."
             ),
-        )
-
-    if "RateLimit" in name or status == 429:
-        return LLMErrorInfo(
-            kind="rate_limit",
-            retryable=False,
-            user_message=(
-                "The AI provider is temporarily rate-limited. This usually clears within a few "
-                "minutes to half an hour - please try again shortly."
-            ),
-            retry_after_s=_retry_after_seconds(exc),
         )
 
     if "Authentication" in name or "PermissionDenied" in name or status in (401, 403):

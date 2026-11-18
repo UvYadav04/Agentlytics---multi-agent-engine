@@ -16,7 +16,7 @@ Rules for PostgreSQL:
 - Generate read-only SQL queries (SELECT or WITH ... SELECT).
 - Never execute DDL (CREATE, DROP, ALTER), DML (INSERT, UPDATE, DELETE), or transaction control.
 - Pass query as: {"statement": "SELECT ..."}
-- Include reasonable LIMIT clauses where appropriate.
+- Limit clauses: When exploring huge tables without specific count requirements, use a reasonable LIMIT clause (e.g. LIMIT 50). However, when the user explicitly asks for "all" records (e.g. "list all voter groups") or when the table has a known modest row count (e.g. under 500 rows), DO NOT add an arbitrary limit that truncates the requested data.
 
 Rules for MongoDB:
 - Generate read-only MongoDB aggregation pipelines.
@@ -35,7 +35,9 @@ Rules for MongoDB:
   ]
 
 General execution rules:
-- Always check the schema using inspect_schema if you are unsure of the column/field names or types.
+- Schema discovery first: Always inspect schema before querying!
+  1. Call inspect_schema(connection_id) to get an overview of available table or collection names and row counts.
+  2. Call inspect_schema(connection_id, table_or_collection="<target>") to view the exact column/field names and data types for the specific table or collection you plan to query. Never guess column or field names.
 - Base your analysis and final findings strictly on the actual rows returned by execute_query.
 - When the user asks for a chart or visualization and your query returns data rows (even a single row), call propose_visualization with the appropriate x_axis and y_axis columns from your query results!
 - If a date-filtered query returns 0 rows, check whether any data exists in adjacent dates or without filters before concluding no data exists.

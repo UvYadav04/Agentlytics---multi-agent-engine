@@ -49,9 +49,10 @@ class DocumentTools(AskUserMixin):
         self.file_service = file_service
 
     def _scoped_file_ids(self, file_ids: list = None) -> list:
-        if file_ids is None:
+        if not file_ids:
             return self.assigned_file_ids
-        return [f for f in file_ids if f in self.assigned_file_ids]
+        scoped = [f for f in file_ids if f in self.assigned_file_ids]
+        return scoped if scoped else self.assigned_file_ids
 
     def _to_result(self, chunk) -> ChunkResult:
         meta = dict(chunk.metadata)

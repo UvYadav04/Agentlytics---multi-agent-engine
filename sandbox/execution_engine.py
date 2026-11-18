@@ -81,16 +81,20 @@ class ExecutionEngine:
             saved = []
 
             def describe(df):
-                return {
+                res = {
                     "columns": [str(c) for c in df.columns],
                     "dtypes": {str(c): str(df[c].dtype) for c in df.columns},
                     "shape": list(df.shape),
                     "null_counts": {str(c): int(n) for c, n in df.isnull().sum().items()},
                 }
+                print(res)
+                return res
 
             def preview(df, n=5):
                 n = max(1, min(int(n), 10))
-                return json.loads(df.head(n).to_json(orient="records"))
+                res = json.loads(df.head(n).to_json(orient="records"))
+                print(res)
+                return res
 
             def sql(query):
                 return con.execute(query).df()

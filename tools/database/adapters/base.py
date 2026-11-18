@@ -6,6 +6,7 @@ class BaseDatabaseAdapter(ABC):
     def __init__(self, connection_string: str, database: str | None = None):
         self.connection_string = connection_string
         self.database = database
+        self._cached_inspection = None
 
     @abstractmethod
     async def inspect_schema(self, table_or_collection: str | None = None) -> dict[str, Any]:

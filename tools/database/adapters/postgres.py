@@ -14,7 +14,9 @@ logger = logging.getLogger("tools.database.adapters.postgres")
 class PostgresAdapter(BaseDatabaseAdapter):
     async def inspect_schema(self, table_or_collection: str | None = None) -> dict[str, Any]:
         try:
-            _, result = await inspect_database("postgresql", self.connection_string)
+            if self._cached_inspection is None:
+                _, self._cached_inspection = await inspect_database("postgresql", self.connection_string)
+            result = self._cached_inspection
             if not result.objects:
                 return {
                     "success": True,
@@ -54,7 +56,7 @@ class PostgresAdapter(BaseDatabaseAdapter):
                         "nullable": f.get("nullable"),
                         "primary_key": f.get("primary_key", False),
                     }
-                    for f in raw_fields[:100]
+                    for f in raw_fields
                 ]
                 return {
                     "success": True,
@@ -81,7 +83,7 @@ class PostgresAdapter(BaseDatabaseAdapter):
                                 "type": f.get("type"),
                                 "primary_key": f.get("primary_key", False),
                             }
-                            for f in raw_fields[:100]
+                            for f in raw_fields
                         ],
                         "foreign_keys": obj.get("foreign_keys", []),
                     })
@@ -96,7 +98,6 @@ class PostgresAdapter(BaseDatabaseAdapter):
                 {
                     "table": f"{obj.get('schema')}.{obj.get('name')}" if obj.get("schema") else obj.get("name"),
                     "row_count": obj.get("row_count"),
-                    "key_columns": [f.get("name") for f in obj.get("fields", [])[:10]],
                     "total_columns": len(obj.get("fields", [])),
                 }
                 for obj in result.objects
@@ -107,7 +108,7 @@ class PostgresAdapter(BaseDatabaseAdapter):
                 "database": result.database,
                 "tables": tables_summary,
                 "total_tables": len(result.objects),
-                "instruction": "Call inspect_schema with table_or_collection='<table_name>' to view detailed columns and keys for a specific table.",
+                "instruction": "This is an overview of tables in the database. Call inspect_schema with table_or_collection='<table_name>' to view detailed columns, types, and primary keys for the target table before querying.",
             }
         except (ConnectionStringError, DatabaseInspectionError, Exception) as exc:
             logger.warning("Postgres schema inspection error: %s", exc)

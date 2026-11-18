@@ -8,3 +8,4 @@ class ChunkRecord:
     workspace_id: str
     text: str
     metadata: dict = field(default_factory=dict)
+    score: float = 0.0

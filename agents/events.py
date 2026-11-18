@@ -21,13 +21,22 @@ def make_tool_event_translator(friendly_names: dict[str, str], *, include_result
 
         if event_type == "ToolCallRequestEvent":
             message = "; ".join(_label(call.name) for call in event.content)
-            return [{"type": "tool_call", "message": message}]
+            calls_data = [{"name": call.name, "arguments": getattr(call, "arguments", None)} for call in event.content]
+            return [{"type": "tool_call", "message": message, "calls": calls_data}]
 
         if event_type == "ToolCallExecutionEvent":
             names = [res.name for res in event.content]
             any_error = any(getattr(res, "is_error", False) for res in event.content)
             message = "; ".join(_label(n) for n in names)
-            events = [{"type": "tool_error" if any_error else "tool_result", "message": message}]
+            results_data = [
+                {
+                    "name": res.name,
+                    "content": getattr(res, "content", None),
+                    "is_error": getattr(res, "is_error", False),
+                }
+                for res in event.content
+            ]
+            events = [{"type": "tool_error" if any_error else "tool_result", "message": message, "results": results_data}]
             if include_result_status:
                 events.append({
                     "type": "status",

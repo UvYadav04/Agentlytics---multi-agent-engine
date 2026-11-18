@@ -3,7 +3,10 @@ import os
 import time
 
 import requests
-import requests_unixsocket
+try:
+    import requests_unixsocket
+except ImportError:
+    requests_unixsocket = None
 import os
 
 from shared.observability import get_meter, get_tracer
@@ -35,7 +38,7 @@ class SandboxClient:
     def __init__(self, socket_path: str, timeout_seconds: float = 30.0):
         self.socket_path = socket_path
         self.timeout_seconds = timeout_seconds
-        self._session = requests_unixsocket.Session()
+        self._session = requests_unixsocket.Session() if requests_unixsocket else None
         self._base_url = f"http+unix://{_quote_socket_path(socket_path)}"
         logger.info(
             "sandbox client created: socket_path=%s (exists on host right now=%s) timeout=%.1fs",

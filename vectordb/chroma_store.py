@@ -20,14 +20,17 @@ except Exception:
 
 
 class ChromaVectorStore(BaseVectorStore):
-    def __init__(self):
-        settings = get_settings()
-        self.client = chromadb.CloudClient(
-            tenant=settings.CHROMA_TENANT,
-            database=settings.CHROMA_DATABASE,
-            api_key=settings.CHROMA_API_KEY,
-        )
-        self.collection = self.client.get_or_create_collection(name="chunks")
+    def __init__(self, collection_name: str = "chunks", client=None):
+        if client is not None:
+            self.client = client
+        else:
+            settings = get_settings()
+            self.client = chromadb.CloudClient(
+                tenant=settings.CHROMA_TENANT,
+                database=settings.CHROMA_DATABASE,
+                api_key=settings.CHROMA_API_KEY,
+            )
+        self.collection = self.client.get_or_create_collection(name=collection_name)
 
     def upsert(self, chunks: list) -> list:
         start = time.perf_counter()
