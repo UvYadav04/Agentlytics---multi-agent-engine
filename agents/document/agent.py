@@ -33,7 +33,14 @@ class DocumentAgent:
 
         vector_store = vector_store or ChromaVectorStore()
         if reranker is None:
-            reranker = CrossEncoderReranker()
+            settings = get_settings()
+            if settings.get("DEEPINFRA_API_KEY"):
+                try:
+                    reranker = DeepInfraReranker()
+                except Exception:
+                    reranker = CrossEncoderReranker()
+            else:
+                reranker = CrossEncoderReranker()
 
         self.tools = DocumentTools(assigned_files, vector_store, reranker=reranker, llm_provider=provider, file_service=file_service)
 

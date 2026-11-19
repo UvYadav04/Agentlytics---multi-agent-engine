@@ -7,25 +7,28 @@ from llama_cloud_services import LlamaParse
 
 from config import get_settings
 
-_MD_CONVERTER = DocumentConverter()
-
-_parser = None
+_MD_CONVERTER = None
 
 
-def _get_parser() -> LlamaParse:
-    global _parser
-    if _parser is None:
-        api_key = get_settings().LLAMAPARSE_API_KEY
-        if not api_key:
-            raise RuntimeError(
-                "LLAMAPARSE_API_KEY is not set - add it to Server/analyzerEngine/.env"
-            )
-        _parser = LlamaParse(api_key=api_key, result_type="markdown")
-    return _parser
+def _get_md_converter() -> DocumentConverter:
+    global _MD_CONVERTER
+    if _MD_CONVERTER is None:
+        _MD_CONVERTER = DocumentConverter()
+    return _MD_CONVERTER
+
+
+def _create_parser() -> LlamaParse:
+    api_key = get_settings().LLAMAPARSE_API_KEY
+    if not api_key:
+        raise RuntimeError(
+            "LLAMAPARSE_API_KEY is not set - add it to Server/analyzerEngine/.env"
+        )
+    return LlamaParse(api_key=api_key, result_type="markdown")
 
 
 async def _fetch_result_json(file_path: str) -> dict:
-    result = await _get_parser().aparse(file_path)
+    parser = _create_parser()
+    result = await parser.aparse(file_path)
     return await result.aget_json()
 
 
@@ -59,6 +62,6 @@ def _markdown_to_docling(markdown: str):
         tmp.write(markdown)
         tmp_path = tmp.name
     try:
-        return _MD_CONVERTER.convert(tmp_path).document
+        return _get_md_converter().convert(tmp_path).document
     finally:
         os.remove(tmp_path)

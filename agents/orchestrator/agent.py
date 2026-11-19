@@ -71,7 +71,7 @@ def _wrap_with_next_capabilities(func, holder: "_CapabilityHolder"):
             holder.value = list(kwargs.pop("next_capabilities", None) or [])
             t0 = time.monotonic()
             outcome = "ok"
-            step_type = "agent" if tool_name.startswith("invoke_") else "tool"
+            step_type = "tool"
             with trace_span(
                 name=tool_name,
                 component=f"orchestrator.tool.{tool_name}",
@@ -99,7 +99,7 @@ def _wrap_with_next_capabilities(func, holder: "_CapabilityHolder"):
             holder.value = list(kwargs.pop("next_capabilities", None) or [])
             t0 = time.monotonic()
             outcome = "ok"
-            step_type = "agent" if tool_name.startswith("invoke_") else "tool"
+            step_type = "tool"
             with trace_span(
                 name=tool_name,
                 component=f"orchestrator.tool.{tool_name}",
@@ -291,7 +291,7 @@ class OrchestratorAgent:
             follow_up_questions=follow_up_questions,
         )
 
-    def _context_brief(self, max_files: int = 40, max_columns: int = 25) -> str:
+    def _context_brief(self, max_files: int = 15, max_columns: int = 10) -> str:
         now = datetime.now(timezone.utc)
         lines = [f"Today's date: {now.date().isoformat()} ({now.strftime('%A')}, UTC)."]
 

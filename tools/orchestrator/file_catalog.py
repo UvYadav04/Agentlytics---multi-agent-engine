@@ -49,7 +49,7 @@ def is_tabular_output_ref(output_ref: str) -> bool:
 
 def is_browsable(entry) -> bool:
     if entry.file_type == "table":
-        return "from_xlsx" in (entry.tags or [])
+        return True
     if entry.file_type in ("pdf", "txt"):
         return True
     return is_tabular_output_ref(entry.output_ref)

@@ -2,6 +2,8 @@ import os
 import uuid
 from typing import Callable, Optional
 
+import pandas as pd
+
 try:
     import pypdf
 except ImportError:
@@ -29,6 +31,45 @@ from ingestion.models import IngestionResult
 from vectordb.schema import ChunkRecord
 
 MAX_PDF_PAGES = 30
+
+
+def _sanitize_table_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Sanitizes DataFrame columns: flattens MultiIndex, replaces empty strings, and deduplicates."""
+    if df is None or df.empty:
+        return df
+
+    # Flatten MultiIndex if present
+    if isinstance(df.columns, pd.MultiIndex):
+        flat_cols = []
+        for col in df.columns:
+            parts = [
+                str(p).strip()
+                for p in col
+                if p is not None and str(p).strip() and not str(p).startswith("Unnamed:")
+            ]
+            flat_cols.append("_".join(parts) if parts else "")
+        df = df.copy()
+        df.columns = flat_cols
+
+    # Replace blank / unnamed columns and deduplicate
+    seen: dict[str, int] = {}
+    clean_cols: list[str] = []
+    for i, col in enumerate(df.columns):
+        c_str = str(col).strip() if col is not None else ""
+        if not c_str or c_str.lower().startswith("unnamed:"):
+            base = f"column_{i + 1}"
+        else:
+            base = c_str
+        if base in seen:
+            seen[base] += 1
+            clean_cols.append(f"{base}_{seen[base]}")
+        else:
+            seen[base] = 0
+            clean_cols.append(base)
+
+    df = df.copy()
+    df.columns = clean_cols
+    return df
 
 
 class PDFIngestor(BaseIngestor):
@@ -131,7 +172,12 @@ class PDFIngestor(BaseIngestor):
                         error_kind="vector_store_size_exceeded" if is_size_related_error(exc) else None,
                     )
 
-            status = "success" if not errors else "partial"
+            if not pages:
+                status = "failed"
+                if not errors:
+                    errors = ["No pages could be extracted from PDF"]
+            else:
+                status = "success" if not errors else "partial"
 
             return IngestionResult(
                 file_id=file_id,
@@ -169,7 +215,7 @@ class PDFIngestor(BaseIngestor):
         table_chunk_records = []
         for offset, table in enumerate(tables):
             table_file_id = f"{file_id}_table_{start_index + offset}"
-            dataframe = table["dataframe"]
+            dataframe = _sanitize_table_dataframe(table["dataframe"])
             try:
                 self.storage.write(dataframe, f"{workspace_id}/{table_file_id}.parquet")
                 output_ref = table_file_id

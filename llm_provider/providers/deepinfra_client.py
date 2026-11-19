@@ -10,19 +10,21 @@ MODEL_INFO = {
     "structured_output": True,
 }
 
-DEFAULT_MAX_TOKENS = 8192
+DEFAULT_MAX_TOKENS = 2048
 
 DISABLE_THINKING = {"chat_template_kwargs": {"enable_thinking": False}}
 
 
 def build_client(model: str = None):
     settings = get_settings()
+    max_tokens = int(settings.get("DEEPINFRA_MAX_TOKENS", DEFAULT_MAX_TOKENS))
+    target_model = model or settings.get("DEFAULT_MODEL", "Qwen/Qwen2.5-72B-Instruct")
     return OpenAIChatCompletionClient(
-        model=model or "Qwen/Qwen3-32B",
+        model=target_model,
         api_key=settings.DEEPINFRA_API_KEY,
         base_url="https://api.deepinfra.com/v1/openai",
         model_info=MODEL_INFO,
         parallel_tool_calls=False,
-        max_tokens=DEFAULT_MAX_TOKENS,
+        max_tokens=max_tokens,
         extra_body=DISABLE_THINKING,
     )
