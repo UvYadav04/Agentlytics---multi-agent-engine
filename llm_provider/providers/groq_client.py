@@ -11,7 +11,7 @@ MODEL_INFO = {
 }
 
 
-DEFAULT_GROQ_MODEL = "openai/gpt-oss-20b"
+DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b"
 
 def build_client(model: str = None):
     settings = get_settings()
