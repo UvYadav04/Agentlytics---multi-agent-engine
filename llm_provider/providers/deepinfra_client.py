@@ -19,6 +19,11 @@ def build_client(model: str = None):
     settings = get_settings()
     max_tokens = int(settings.get("DEEPINFRA_MAX_TOKENS", DEFAULT_MAX_TOKENS))
     target_model = model or settings.get("DEFAULT_MODEL", "Qwen/Qwen2.5-72B-Instruct")
+    service_tier = settings.get("DEEPINFRA_SERVICE_TIER", "priority")
+    extra_body = {**DISABLE_THINKING}
+    if service_tier:
+        extra_body["service_tier"] = service_tier
+
     return OpenAIChatCompletionClient(
         model=target_model,
         api_key=settings.DEEPINFRA_API_KEY,
@@ -26,5 +31,5 @@ def build_client(model: str = None):
         model_info=MODEL_INFO,
         parallel_tool_calls=False,
         max_tokens=max_tokens,
-        extra_body=DISABLE_THINKING,
+        extra_body=extra_body,
     )

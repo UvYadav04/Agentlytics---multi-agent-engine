@@ -1,6 +1,7 @@
 from llm_provider.providers import (
     anthropic_client,
     azure_client,
+    cerebras_client,
     deepinfra_client,
     gemini_client,
     groq_client,
@@ -14,6 +15,7 @@ PROVIDER_REGISTRY = {
     "groq": groq_client.build_client,
     "gemini": gemini_client.build_client,
     "deepinfra": deepinfra_client.build_client,
+    "cerebras": cerebras_client.build_client,
 }
 
 
