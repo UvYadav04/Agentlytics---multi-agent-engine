@@ -6,6 +6,7 @@ from llm_provider.providers import (
     gemini_client,
     groq_client,
     openai_client,
+    openrouter_client,
 )
 
 PROVIDER_REGISTRY = {
@@ -16,6 +17,7 @@ PROVIDER_REGISTRY = {
     "gemini": gemini_client.build_client,
     "deepinfra": deepinfra_client.build_client,
     "cerebras": cerebras_client.build_client,
+    "openrouter": openrouter_client.build_client,
 }
 
 

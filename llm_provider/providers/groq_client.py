@@ -18,6 +18,8 @@ def build_client(model: str = None):
     target_model = model or getattr(settings, "DEFAULT_MODEL", None) or DEFAULT_GROQ_MODEL
     if "llama-3.3-70b" in target_model.lower():
         target_model = DEFAULT_GROQ_MODEL
+    elif target_model == "gpt-oss-120b":
+        target_model = "openai/gpt-oss-120b"
 
     return OpenAIChatCompletionClient(
         model=target_model,

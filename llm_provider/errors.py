@@ -42,8 +42,15 @@ def classify_llm_error(exc: Exception) -> LLMErrorInfo:
 
     message = str(exc).lower()
 
-    # Rate limits (429 or rate limit messages) are transient and retryable with backoff
-    if "ratelimit" in name.lower() or status == 429 or "rate limit" in message:
+    # Rate limits (429, TPM quota exceeded, or rate limit headers/messages) are transient and retryable with backoff
+    is_tpm_rate_limit = (
+        "tokens per minute" in message
+        or "tpm" in message
+        or "token_quota_exceeded" in message
+        or "too_many_tokens" in message
+        or "rate_limit_exceeded" in message
+    )
+    if "ratelimit" in name.lower() or status == 429 or "rate limit" in message or is_tpm_rate_limit:
         retry_sec = _retry_after_seconds(exc)
         if retry_sec is None:
             m = re.search(r"try again in (\d+(?:\.\d+)?)s?", message)
@@ -60,7 +67,7 @@ def classify_llm_error(exc: Exception) -> LLMErrorInfo:
             retry_after_s=retry_sec,
         )
 
-    if status == 413 or "request too large" in message or "context_length_exceeded" in message:
+    if status == 413 or "context_length_exceeded" in message or ("request too large" in message and not is_tpm_rate_limit):
         return LLMErrorInfo(
             kind="token_limit",
             retryable=False,

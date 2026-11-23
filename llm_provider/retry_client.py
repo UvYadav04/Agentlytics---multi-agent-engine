@@ -17,6 +17,8 @@ from llm_provider.errors import classify_llm_error
 
 logger = logging.getLogger("llm_provider.retry")
 
+MAX_RETRY_DELAY_S = 8.0
+
 
 class RetryingChatCompletionClient(ChatCompletionClient):
     def __init__(self, inner: ChatCompletionClient, max_attempts: int = 5, base_delay_s: float = 1.0):
@@ -44,6 +46,12 @@ class RetryingChatCompletionClient(ChatCompletionClient):
                         )
                     raise
                 if info.retry_after_s and info.retry_after_s > 0:
+                    if info.retry_after_s > MAX_RETRY_DELAY_S:
+                        logger.warning(
+                            "llm call rate-limited with long retry-after (%.1fs > %.1fs max), skipping sleep to trigger fallback: %s",
+                            info.retry_after_s, MAX_RETRY_DELAY_S, exc,
+                        )
+                        raise
                     delay = info.retry_after_s + random.uniform(0.1, 0.5)
                 else:
                     delay = self._base_delay_s * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
