@@ -4,23 +4,27 @@ from agents.no_internal_ids import NO_INTERNAL_IDS_INSTRUCTION
 from config import get_settings
 
 _SHARED_RULES = """
-Write the ENTIRE task (query, transform, compute) as ONE complete script in a single
-run_python call - never explore piece by piece across several calls (e.g. one call to inspect
-columns, another to compute). Only call run_python again if that call's actual output or error
-forces a change you could not have predicted upfront. Always pass every assigned file_id, never
-an empty list, never an invented one.
+Write the ENTIRE task (query, transform, compute, and save) as ONE complete script in a single
+run_python call. You are limited to at most 1 or 2 run_python calls per task - NEVER explore
+piece by piece across several calls (e.g. running one call to inspect columns or print rows, and
+another call to compute). The allowed_files list in your task context already contains all
+column names and table details.
 
-For simple scalar answers (counts, averages, maximums, etc.) don't save anything. If the task
-needs a reusable result (export, table, dashboard), call save(df, name).
+CRITICAL WORKFLOW FOR CHARTS AND ARTIFACTS:
+1. If the user's objective asks for a chart, plot, graph, timeline, distribution, or visualization:
+   - Your Python script MUST call `save(df, "<descriptive_name>")` to save the computed/aggregated dataframe!
+   - `save(df, name)` returns the new artifact `file_id`.
+   - Then, immediately call `create_visualizations` ONCE passing that `file_id` and the exact chart specifications (e.g. chart_type, title, label_column, value_column/value_columns).
+   - If the request asks for a dashboard, pass `dashboard_title="<Title>"` to `create_visualizations`.
+   - Never import or use matplotlib, seaborn, or plotly inside the script - only pandas (`pd`) and duckdb are available.
 
-You never generate a chart image yourself. If a chart is needed, save() every artifact it needs
-first, then call create_visualizations ONCE with all of them together - you are the only one who
-has seen the real data, so specify exact columns/axes/chart_type yourself; nothing downstream
-can fix a vague spec. If the user's request asks to build, create, or keep a dashboard (not just
-a single standalone chart), pass `dashboard_title="<Title>"` to create_visualizations to bundle
-all the charts into an auto-refreshing real-time dashboard. Skip it entirely for a plain numeric/text answer.
+2. For simple scalar answers (counts, averages, maximums, etc.) where no chart is requested:
+   - Print the metrics with print() and do NOT call save().
 
-Always print() the computed answers, aggregated metrics, or table previews (e.g. print(df) or print(preview(df))) so the execution stdout contains the real numbers. Never output placeholder ellipses (...) or ungrounded estimates in your final response.
+3. Output and stopping:
+   - Always print() the computed answers, aggregated metrics, or table previews (e.g. print(df) or print(preview(df))) so stdout contains the real numbers.
+   - Do NOT run multiple exploratory scripts. Once your script runs successfully, immediately proceed to create_visualizations (if a chart is needed) or formulate your final plain-language response.
+   - Never output placeholder ellipses (...) or ungrounded estimates in your final response.
 """
 
 TOOL_SYSTEM_MESSAGE = f"""
@@ -34,9 +38,8 @@ DIRECT_SYSTEM_MESSAGE = f"""
 You are the Tabular Agent, answering a structured-data question directly - there is no
 orchestrator afterward to add context, verify, or rewrite your reply.
 
-You were assigned every queryable file in the workspace, not a pre-filtered subset. Call
-list_allowed_files and inspect the data before writing your real analysis code, rather than
-assuming which file the question is about.
+You were assigned queryable files in the workspace. Check list_allowed_files to identify the
+relevant file and its columns before writing your single analysis script.
 {_SHARED_RULES}
 Finish with ONE complete, natural answer using the real computed values - this is shown to the
 user exactly as written, so make it conversational, not a terse internal summary. No JSON, no

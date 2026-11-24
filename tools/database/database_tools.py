@@ -43,6 +43,9 @@ class DatabaseTools(AskUserMixin):
         self.reports_dir = reports_dir
         self.last_query_rows: list[dict] = []
         self.last_query_columns: list[Any] = []
+        self.execute_query_count: int = 0
+        self.max_execute_query_calls: int = 5
+        self.consecutive_connection_errors: int = 0
 
     def list_available_connections(self) -> list[dict]:
         """
@@ -153,6 +156,13 @@ class DatabaseTools(AskUserMixin):
         if not isinstance(query, dict):
             return {"success": False, "error": f"Query must be a JSON object, got {type(query).__name__}."}
 
+        self.execute_query_count += 1
+        if self.execute_query_count > self.max_execute_query_calls:
+            return {
+                "success": False,
+                "error": f"Execution limit reached: execute_query has already been called {self.execute_query_count - 1} times. Formulate your final answer with the data obtained.",
+            }
+
         try:
             conn_info, adapter = await self._resolve_adapter(connection_id)
         except LookupError as exc:
@@ -176,6 +186,23 @@ class DatabaseTools(AskUserMixin):
                 }
 
         result = await adapter.execute_query(query)
+
+        if not result.get("success"):
+            err_msg = str(result.get("error", ""))
+            if any(term in err_msg.lower() for term in ("connect", "connection", "nonetype", "timed out")):
+                self.consecutive_connection_errors += 1
+                if self.consecutive_connection_errors >= 2:
+                    return {
+                        "success": False,
+                        "database_type": db_type,
+                        "error": (
+                            f"Database connection error: {err_msg}. "
+                            "The database appears unreachable or unavailable. "
+                            "Do NOT retry execute_query. Inform the user that the database connection could not be reached."
+                        ),
+                    }
+        else:
+            self.consecutive_connection_errors = 0
 
         if result.get("success"):
             rows = result.get("rows") or []

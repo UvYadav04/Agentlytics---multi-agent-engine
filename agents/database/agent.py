@@ -92,6 +92,8 @@ class DatabaseAgent:
         self.tools.charts_proposed = []
         self.tools.dashboards_created = []
         self.tools.query_history = []
+        self.tools.execute_query_count = 0
+        self.tools.consecutive_connection_errors = 0
         self.tools.on_event = on_event
         self.tools.ask_user_callback = ask_user
 

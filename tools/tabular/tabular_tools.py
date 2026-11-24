@@ -60,6 +60,9 @@ class TabularTools(AskUserMixin):
         self.dashboard_bundles_created: list = []
         self.last_transform_script: Optional[str] = None
         self.last_transform_file_ids: list = []
+        self.run_python_count: int = 0
+        self.max_run_python_calls: int = 3
+        self.last_run_python_error: Optional[str] = None
         self.visualization_service = visualization_service or VisualizationService(output_dir=reports_dir)
         self.table_service = table_service or TableArtifactService(root_dir=self.root_dir or "data/parquet")
         self.file_service = file_service
@@ -100,21 +103,53 @@ class TabularTools(AskUserMixin):
     def run_python(self, code: str, file_ids: list) -> dict:
         """Execute Python code in an isolated sandbox. Pass every assigned file_id you need.
 
-        Write ONE complete script that does the whole task (query, transform, compute) - do not
-        split the task across multiple run_python calls to explore step by step. Only call this
-        again if the actual output/error from this call forces a change you couldn't predict.
+        Write ONE complete script that does the whole task (query, transform, compute, and save) - do not
+        split the task across multiple run_python calls to explore step by step. You are allowed at most 3
+        run_python calls per task. Only call this again if a runtime exception forces a bug fix.
 
         Already defined in the global namespace - never import or redefine them:
         - dfs: {table_name: DataFrame} for every assigned file
         - describe(df): summary of a DataFrame
         - preview(df): small preview of a DataFrame
         - sql(query): runs SQL, returns a DataFrame
-        - save(df, name): persists a DataFrame, returns its file_id
+        - save(df, name): persists a DataFrame, returns its file_id (MUST be called if a chart is needed)
 
         Only pandas (`pd`) and duckdb are installed - no matplotlib, sklearn, or other
         third-party packages. Do not import anything; use the given functions directly."""
         if self._sandbox is None:
             raise RuntimeError("no storage configured for this agent, cannot run the sandbox")
+
+        self.run_python_count += 1
+        if self.run_python_count > self.max_run_python_calls:
+            logger.warning(
+                "run_python: call limit reached (%d/%d) for chat=%s",
+                self.run_python_count, self.max_run_python_calls, self.chat_id,
+            )
+            saved_names = list(self.saved_artifacts.keys())
+            if saved_names:
+                guidance = (
+                    f"Execution limit reached: You have already called run_python {self.run_python_count - 1} times. "
+                    f"Artifact(s) already saved: {saved_names}. You MUST NOT call run_python again. "
+                    "Call create_visualizations (if a chart was requested) or formulate your final plain-language response."
+                )
+            else:
+                guidance = (
+                    f"Execution limit reached: You have called run_python {self.run_python_count - 1} times. "
+                    "You MUST NOT call run_python again. Formulate your final response with the data you already obtained or explain what could not be computed."
+                )
+            return {"stdout": "", "saved": [], "error": guidance}
+
+        # Prevent exact duplicate calls that previously errored
+        if self.last_transform_script and code.strip() == self.last_transform_script.strip() and self.last_run_python_error:
+            return {
+                "stdout": "",
+                "saved": [],
+                "error": (
+                    "Identical script rejected: This exact code was already executed and failed. "
+                    "Do not repeat identical code. Either fix the error or synthesize your findings from existing data."
+                ),
+            }
+
         for file_id in file_ids:
             self._check_assigned(file_id)
         tables = {self._table(fid): fid for fid in file_ids}
@@ -123,8 +158,8 @@ class TabularTools(AskUserMixin):
         self.last_transform_file_ids = list(file_ids)
 
         logger.info(
-            "run_python: chat=%s workspace=%s file_ids=%s code_chars=%d",
-            self.chat_id, self.workspace_id, file_ids, len(code),
+            "run_python (call %d/%d): chat=%s workspace=%s file_ids=%s code_chars=%d",
+            self.run_python_count, self.max_run_python_calls, self.chat_id, self.workspace_id, file_ids, len(code),
         )
         t0 = time.perf_counter()
         try:
@@ -134,15 +169,34 @@ class TabularTools(AskUserMixin):
                 "run_python: chat=%s raised after %.1fms: %s",
                 self.chat_id, (time.perf_counter() - t0) * 1000, exc,
             )
-            return {"stdout": "", "saved": [], "error": str(exc)}
+            self.last_run_python_error = str(exc)
+            attempts_left = max(0, self.max_run_python_calls - self.run_python_count)
+            return {
+                "stdout": "",
+                "saved": [],
+                "error": f"SandboxExecutionError: {exc}\n[Attempts remaining: {attempts_left}. If you retry, write a complete fix.]",
+            }
 
         elapsed_ms = (time.perf_counter() - t0) * 1000
         if result.get("error"):
+            self.last_run_python_error = result["error"]
             logger.warning(
                 "run_python: chat=%s completed with error in %.1fms: %s",
                 self.chat_id, elapsed_ms, result["error"],
             )
+            attempts_left = max(0, self.max_run_python_calls - self.run_python_count)
+            if attempts_left > 0:
+                result["error"] = (
+                    f"{result['error']}\n\n[System Note: {attempts_left} attempt(s) remaining for run_python. "
+                    "Write a complete, self-contained fix in your next script. Do not guess columns or import unsupported packages.]"
+                )
+            else:
+                result["error"] = (
+                    f"{result['error']}\n\n[System Note: Maximum run_python attempts reached. "
+                    "Do NOT call run_python again. Conclude with the findings you have or state the error.]"
+                )
         else:
+            self.last_run_python_error = None
             logger.info(
                 "run_python: chat=%s completed in %.1fms (saved=%d artifact(s))",
                 self.chat_id, elapsed_ms, len(result.get("saved") or []),
@@ -154,6 +208,21 @@ class TabularTools(AskUserMixin):
                 self.saved_artifacts[file_id] = entry
                 if self.table_service:
                     self.table_service.register_artifact(file_id, entry, self.workspace_id)
+
+        if not result.get("error"):
+            if self.saved_artifacts:
+                result["guidance"] = (
+                    f"Artifact(s) successfully saved: {list(self.saved_artifacts.keys())}. "
+                    "If a chart was requested, call create_visualizations now with the saved file_id. "
+                    "Do NOT call run_python again."
+                )
+            else:
+                result["guidance"] = (
+                    "Script executed successfully. Output captured in stdout above. "
+                    "Formulate your final plain-language answer using these real computed values. "
+                    "Do NOT call run_python again unless strictly required."
+                )
+
         return result
 
     _VALID_CHART_TYPES = {

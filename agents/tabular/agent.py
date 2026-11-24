@@ -79,6 +79,8 @@ class TabularAgent:
         self.tools.charts_created = []
         self.tools.dashboard_bundles_created = []
         self.tools.ask_user_callback = ask_user
+        self.tools.run_python_count = 0
+        self.tools.last_run_python_error = None
 
         constraints = constraints or {}
         allowed_files = self.tools.list_allowed_files()
@@ -129,6 +131,11 @@ class TabularAgent:
         real_refs = self._real_refs(self._extract_refs(transcript, "file_id"))
         chart_locations = [entry["location"] for entry in self.tools.charts_created]
         summary, follow_up_questions = split_follow_up_questions(final_text)
+        if not summary and self.tools.charts_created:
+            chart_titles = [c.get("title") for c in self.tools.charts_created if c.get("title")]
+            summary = f"Generated {len(self.tools.charts_created)} chart(s): {', '.join(chart_titles)}."
+        elif not summary and self.tools.saved_artifacts:
+            summary = f"Computed and saved data table(s): {', '.join(self.tools.saved_artifacts.keys())}."
         return TabularFindings(
             summary=summary,
             artifact_refs=real_refs + chart_locations,

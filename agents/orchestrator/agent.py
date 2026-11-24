@@ -81,6 +81,22 @@ def _wrap_with_next_capabilities(func, holder: "_CapabilityHolder"):
                 with _tracer.start_as_current_span(f"tool.{tool_name}") as span:
                     try:
                         result = await func(**kwargs)
+                        if isinstance(result, dict) and (result.get("success") is False or result.get("error")):
+                            outcome = "error"
+                            if m_span and hasattr(m_span, "set_output"):
+                                m_span.status = "error"
+                                m_span.error = {
+                                    "type": "ToolExecutionError",
+                                    "message": str(result.get("error") or "Tool execution failed"),
+                                }
+                        elif hasattr(result, "error") and getattr(result, "error", None):
+                            outcome = "error"
+                            if m_span and hasattr(m_span, "set_output"):
+                                m_span.status = "error"
+                                m_span.error = {
+                                    "type": "AgentExecutionError",
+                                    "message": str(getattr(result, "error")),
+                                }
                         if m_span and hasattr(m_span, "set_output"):
                             m_span.set_output("result", safe_serialize(result))
                         return result
@@ -90,7 +106,14 @@ def _wrap_with_next_capabilities(func, holder: "_CapabilityHolder"):
                         if _ERROR_STATUS is not None:
                             span.set_status(_ERROR_STATUS)
                         if m_span and hasattr(m_span, "set_output"):
+                            import traceback
                             m_span.set_output("error", str(exc))
+                            m_span.status = "error"
+                            m_span.error = {
+                                "type": type(exc).__name__,
+                                "message": str(exc),
+                                "traceback": traceback.format_exc(),
+                            }
                         raise
                     finally:
                         _tool_duration.record((time.monotonic() - t0) * 1000, {"tool": tool_name, "outcome": outcome})
@@ -109,6 +132,22 @@ def _wrap_with_next_capabilities(func, holder: "_CapabilityHolder"):
                 with _tracer.start_as_current_span(f"tool.{tool_name}") as span:
                     try:
                         result = func(**kwargs)
+                        if isinstance(result, dict) and (result.get("success") is False or result.get("error")):
+                            outcome = "error"
+                            if m_span and hasattr(m_span, "set_output"):
+                                m_span.status = "error"
+                                m_span.error = {
+                                    "type": "ToolExecutionError",
+                                    "message": str(result.get("error") or "Tool execution failed"),
+                                }
+                        elif hasattr(result, "error") and getattr(result, "error", None):
+                            outcome = "error"
+                            if m_span and hasattr(m_span, "set_output"):
+                                m_span.status = "error"
+                                m_span.error = {
+                                    "type": "AgentExecutionError",
+                                    "message": str(getattr(result, "error")),
+                                }
                         if m_span and hasattr(m_span, "set_output"):
                             m_span.set_output("result", safe_serialize(result))
                         return result
@@ -118,7 +157,14 @@ def _wrap_with_next_capabilities(func, holder: "_CapabilityHolder"):
                         if _ERROR_STATUS is not None:
                             span.set_status(_ERROR_STATUS)
                         if m_span and hasattr(m_span, "set_output"):
+                            import traceback
                             m_span.set_output("error", str(exc))
+                            m_span.status = "error"
+                            m_span.error = {
+                                "type": type(exc).__name__,
+                                "message": str(exc),
+                                "traceback": traceback.format_exc(),
+                            }
                         raise
                     finally:
                         _tool_duration.record((time.monotonic() - t0) * 1000, {"tool": tool_name, "outcome": outcome})
