@@ -178,8 +178,12 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
             only valid queryable file_ids (type csv, parquet, or table) in assigned_files.
             Returns compact findings, not raw data or code.
 
-            Set must_export=True when the user needs reusable outputs (CSV, dashboard, report).
-            If the objective calls for a chart, the Tabular Agent generates and saves it via
+            Set must_export=True when you will follow up with generate_csv/generate_dashboard.
+            Note: Tabular Agent's `save()` ONLY stages an internal Parquet table (`artifact_refs`),
+            NOT a user-downloadable file and NEVER an .xlsx workbook. To give the user a
+            downloadable CSV, you MUST call `generate_csv(file_id)` afterwards (.xlsx export is
+            not supported).
+            If the objective calls for a chart, Tabular Agent generates and saves it via
             create_visualizations and lists it in the returned `charts` field."""
         constraints = constraints or {}
         assigned_files = _normalize_assigned_files(assigned_files)
@@ -197,9 +201,10 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
         effective_objective = objective
         if must_export:
             effective_objective += (
-                "\n\nThis result MUST be persisted: your final computation must call "
-                "save(df, name) inside run_python, and you must report its real file_id "
-                "in your findings' artifact_refs."
+                "\n\nThis result MUST be staged as an internal Parquet table: call save(df, name) "
+                "inside run_python so its real file_id is recorded in artifact_refs. Do NOT claim "
+                "save() created an .xlsx, .csv, or downloadable file - the orchestrator handles "
+                "user-facing CSV export separately."
             )
 
         result = await agent.run(
@@ -358,11 +363,11 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
         )
 
     def generate_csv(self, file_id: str, name: Optional[str] = None) -> str:
-        """Create a CSV from an existing data artifact.
+        """Export an existing table artifact (from Tabular Agent's save() or a workspace table)
+        as a downloadable CSV file.
 
-        Use when the user requests a CSV or spreadsheet, not a report or dashboard.
-        Provide the source file_id and a short output name. Returns the generated
-        CSV file path."""
+        Only CSV export is supported (NOT .xlsx / Excel). Provide the source file_id and a
+        short output name. Returns the generated CSV file path."""
         if self.reporting is None:
             raise RuntimeError("no storage configured, cannot generate files")
         resolved_id = self._resolve_file_id(file_id)

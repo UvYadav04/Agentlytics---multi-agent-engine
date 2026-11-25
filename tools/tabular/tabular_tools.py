@@ -119,7 +119,7 @@ class TabularTools(AskUserMixin):
         - describe(df): summary of a DataFrame
         - preview(df): small preview of a DataFrame
         - sql(query): runs SQL, returns a DataFrame
-        - save(df, name): persists a DataFrame, returns its file_id (MUST be called if a chart is needed)
+        - save(df, name): saves an internal Parquet staging table ONLY (NOT .xlsx, NOT .csv, NOT user-downloadable); returns its file_id for create_visualizations or orchestrator generate_csv
 
         Only pandas (`pd`) and duckdb are installed - no matplotlib, sklearn, or other
         third-party packages. Do not import anything; use the given functions directly."""
@@ -219,9 +219,10 @@ class TabularTools(AskUserMixin):
         if not result.get("error"):
             if self.saved_artifacts:
                 result["guidance"] = (
-                    f"Artifact(s) successfully saved: {list(self.saved_artifacts.keys())}. "
+                    f"Internal Parquet staging table(s) saved: {list(self.saved_artifacts.keys())} "
+                    "(for create_visualizations or orchestrator generate_csv only - NOT .xlsx/.csv and NOT user-downloadable). "
                     "If a chart was requested, call create_visualizations now with the saved file_id. "
-                    "Do NOT call run_python again."
+                    "Do NOT call run_python again, and never claim you created an .xlsx or downloadable file."
                 )
             else:
                 result["guidance"] = (

@@ -16,9 +16,10 @@ Delegation rules:
 - generate_hypotheses: Use for complex or open-ended "why" investigations to plan steps, then verify them with agents before answering.
 - Never answer analytical questions yourself when an agent can verify them.
 
-Charts, reports, and CSVs:
+Charts, reports, and exports:
 - Only invoke_tabular_agent and invoke_database_agent can create charts (returned in `charts`). Never generate charts yourself, and NEVER claim a chart was created unless an agent actually returned one in `charts`. If a PDF has no extracted tables for a requested chart, state plainly that no chart was generated and present the extracted data instead.
-- If a report or CSV is requested, reuse findings already gathered this session instead of re-running an agent; only delegate if required data is missing. Because generate_csv and generate_report are capability-gated, unlock "csv" or "report" via `next_capabilities` (on a preceding tool call or request_capabilities), then call the tool before replying. Never claim a file was created unless its tool call succeeded.
+- Supported file downloads are ONLY CSV (`generate_csv`) and Markdown reports (`generate_report`)—**`.xlsx` / Excel export is NOT supported**. Never ask `invoke_tabular_agent` to create an `.xlsx` workbook; if the user asks for `.xlsx`, explain plainly that `.xlsx` isn't supported (and if helpful, combine/stage the data with `invoke_tabular_agent(must_export=True)` and export a downloadable `.csv` via `generate_csv` instead, stating clearly that it is a CSV).
+- `invoke_tabular_agent(must_export=True)` only stages an internal Parquet `file_id` in `artifact_refs`—it is NOT user-downloadable until you unlock `"csv"`/`"report"` via `next_capabilities` (on a preceding call or `request_capabilities`) and call `generate_csv` or `generate_report`. Reuse findings already gathered this session instead of re-running an agent. Never claim a file is ready to download unless `generate_csv` or `generate_report` actually succeeded.
 
 Once you have enough evidence, stop calling tools and reply in plain language with real numbers and citations. Never write URLs, markdown links, or file paths for generated charts, reports, or CSVs—download cards attach automatically after your answer, so name them by plain-language title only.
 """ + NO_INTERNAL_IDS_INSTRUCTION + ASK_USER_INSTRUCTION + FOLLOW_UP_INSTRUCTION
