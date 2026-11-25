@@ -91,8 +91,7 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
         min_rows, max_rows, tags.
 
         Combine filters into one call. Resolve relative dates with get_current_date.
-        Excel workbooks appear as sheet tables (file_type="table"). PDF tables are
-        available only through the document agent.
+        Excel worksheets and extracted PDF tables appear as table entries (file_type="table").
         """
         filters = filters or {}
         results = [e for e in self.catalog.browsable() if self._matches(e, filters)]
@@ -137,19 +136,14 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
         return entry
 
     def list_tables(self, workspace_id: str, max_results: int = 20) -> list:
-        """
-        List queryable Excel sheet tables.
+        """List all queryable tables (Excel worksheets and extracted PDF tables).
 
-        Returns each worksheet with its own file_id for invoke_tabular_agent.
-        Use this instead of a workbook's file_id when analyzing Excel files.
-        PDF tables are excluded; access them through the document agent.
-        """
+        Returns each table with its own file_id for invoke_tabular_agent."""
         return self.list_files(workspace_id, filters={"file_type": ["table"]}, max_results=max_results)
 
     def list_file_formats(self, workspace_id: str) -> list:
         """List the distinct queryable file types in the workspace (e.g. csv, pdf,
-        table). Use this before list_files when you need to discover available
-        data types. "table" refers only to Excel sheet tables, not PDF tables."""
+        table). "table" covers Excel sheet tables and extracted PDF tables."""
         return sorted({e.file_type for e in self.catalog.browsable()})
 
     def get_current_date(self) -> dict:
@@ -179,19 +173,14 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
     ):
         """Delegate structured data analysis to the Tabular Agent.
 
-            Use for CSV or table data requiring filtering, aggregation, joins, calculations,
-            or analysis. Pass only valid file_ids in assigned_files. The agent returns
-            compact findings, not raw data or code.
+            Use for ALL tasks on CSV, parquet, Excel worksheet, and extracted PDF table data
+            (overview/summary, filtering, aggregation, joins, calculations, or charts). Pass
+            only valid queryable file_ids (type csv, parquet, or table) in assigned_files.
+            Returns compact findings, not raw data or code.
 
-            Set must_export=True whenever the user needs reusable outputs (e.g. CSV,
-            dashboard, or report).
-
-            If the objective calls for a chart, the Tabular Agent generates and saves it itself
-            (via its own create_visualizations tool) as part of this same call - you don't
-            generate, validate, or lay out charts yourself. The returned findings' `charts` field
-            already lists every chart it made (chart_id, artifact_file_id, chart_type, title,
-            location) - just mention them in your final answer; no further tool call is needed to
-            produce or attach them."""
+            Set must_export=True when the user needs reusable outputs (CSV, dashboard, report).
+            If the objective calls for a chart, the Tabular Agent generates and saves it via
+            create_visualizations and lists it in the returned `charts` field."""
         constraints = constraints or {}
         assigned_files = _normalize_assigned_files(assigned_files)
         self.state.selected_files.extend(f.file_id for f in assigned_files)
@@ -324,31 +313,14 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
         assigned_files: list[Union[FileRef, str]],
         constraints: Optional[dict] = None,
     ):
-        """Deterministic whole-document analysis.
+        """Deterministic whole-document analysis for PDF and text files ONLY.
 
-        Use this instead of `invoke_document_agent` whenever the user's request
-        requires understanding the entire assigned document(s), not retrieving
-        specific information.
+        NEVER use on CSV, Excel (.xlsx), parquet, or type=table files, and NEVER use when
+        the user asks for a chart. Use instead of `invoke_document_agent` when the request
+        requires reading the entire PDF/text file (summarize, explain, executive summary,
+        key takeaways, anomalies/risks, action items).
 
-        Examples:
-        - Summarize or explain a document
-        - Generate an executive summary or key takeaways
-        - Find anomalies, risks, or insights
-        - Extract action items
-        - Any other whole-document analysis
-
-        Do NOT use this for targeted questions, keyword lookups, section-specific
-        queries, or iterative investigations. Use `invoke_document_agent` instead.
-
-        `objective` is a free-form instruction written by the orchestrator. It is
-        passed directly to the analysis model, so make it clear, specific, and
-        complete.
-
-        The processor automatically receives metadata for assigned documents,
-        retrieves all chunks in order, processes them in token-limited batches,
-        merges the intermediate results, and performs one final LLM call to produce
-        the final response.
-        """
+        `objective` is passed directly to the analysis model, so make it clear and complete."""
         constraints = constraints or {}
         assigned_files = _normalize_assigned_files(assigned_files)
         self.state.selected_files.extend(f.file_id for f in assigned_files)
