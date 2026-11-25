@@ -6,23 +6,29 @@ from config import get_settings
 _SHARED_RULES = """
 Write the ENTIRE task (query, transform, compute, and save) as ONE complete script in a single
 run_python call. You are limited to at most 1 or 2 run_python calls per task - NEVER explore
-piece by piece across several calls (e.g. running one call to inspect columns or print rows, and
+piece by piece across several calls (e.g. NEVER run one call to inspect columns or print rows, and
 another call to compute). The allowed_files list in your task context already contains all
-column names and table details.
+column names, data types, and sample data rows.
 
-CRITICAL WORKFLOW FOR CHARTS AND ARTIFACTS:
+CRITICAL WORKFLOW FOR CHARTS AND VISUALIZATIONS:
 1. If the user's objective asks for a chart, plot, graph, timeline, distribution, or visualization:
-   - Your Python script MUST call `save(df, "<descriptive_name>")` to save the computed/aggregated dataframe!
-   - `save(df, name)` returns the new artifact `file_id`.
-   - Then, immediately call `create_visualizations` ONCE passing that `file_id` and the exact chart specifications (e.g. chart_type, title, label_column, value_column/value_columns).
-   - If the request asks for a dashboard, pass `dashboard_title="<Title>"` to `create_visualizations`.
-   - Never import or use matplotlib, seaborn, or plotly inside the script - only pandas (`pd`) and duckdb are available.
+   Step A - In your Python script via `run_python`:
+     - Load the data from `dfs['<table_name>']`.
+     - Clean, sort, filter, and aggregate the data as needed (e.g. pd.to_datetime, pd.to_numeric, sort_values).
+     - Print the summary/results with print() so stdout has the numbers.
+     - Call `saved_id = save(df, "<descriptive_name>")` to persist the dataframe. This returns the artifact file_id (string).
+     - DO NOT call `create_visualizations` inside Python! `create_visualizations` is NOT a Python function; it is an AGENT TOOL.
+     - Never import or use matplotlib, seaborn, or plotly inside the script - only pandas (`pd`), duckdb, and numpy (`np`) are available.
+
+   Step B - In your NEXT tool call (AFTER `run_python` completes):
+     - Call the AGENT TOOL `create_visualizations` passing `file_id` (the saved_id returned by save) and the exact chart specifications (e.g. chart_type, title, label_column, value_columns).
+     - If the request asks for a dashboard, pass `dashboard_title="<Title>"` to `create_visualizations`.
 
 2. For simple scalar answers (counts, averages, maximums, etc.) where no chart is requested:
    - Print the metrics with print() and do NOT call save().
 
 3. Output and stopping:
-   - Always print() the computed answers, aggregated metrics, or table previews (e.g. print(df) or print(preview(df))) so stdout contains the real numbers.
+   - Always print() the computed answers or aggregated metrics so stdout contains the real numbers.
    - Do NOT run multiple exploratory scripts. Once your script runs successfully, immediately proceed to create_visualizations (if a chart is needed) or formulate your final plain-language response.
    - Never output placeholder ellipses (...) or ungrounded estimates in your final response.
 """

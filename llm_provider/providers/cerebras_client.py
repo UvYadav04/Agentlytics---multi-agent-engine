@@ -15,7 +15,11 @@ DEFAULT_CEREBRAS_MODEL = "gpt-oss-120b"
 
 def build_client(model: str = None):
     settings = get_settings()
-    target_model = model or getattr(settings, "DEFAULT_MODEL", None) or DEFAULT_CEREBRAS_MODEL
+    configured_model = getattr(settings, "CEREBRAS_MODEL", None)
+    target_model = model or configured_model or DEFAULT_CEREBRAS_MODEL
+    # Guard against inheriting foreign provider models
+    if ":free" in target_model or "nemotron" in target_model.lower() or "/" in target_model:
+        target_model = configured_model or DEFAULT_CEREBRAS_MODEL
     if target_model.startswith("openai/"):
         target_model = target_model[len("openai/"):]
 

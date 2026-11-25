@@ -14,6 +14,7 @@ import time
 import traceback
 
 import duckdb
+import numpy as np
 import pandas as pd
 from path_resolver import get_sandbox_path, new_artifact_id, validate_segment
 
@@ -119,9 +120,11 @@ class ExecutionEngine:
                 "dfs": dfs,
                 "describe": describe,
                 "preview": preview,
+                "display": print,
                 "sql": sql,
                 "save": save,
                 "pd": pd,
+                "np": np,
                 "duckdb": duckdb,
             }
 

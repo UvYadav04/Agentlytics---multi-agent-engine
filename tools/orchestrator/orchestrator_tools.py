@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Union
 
 from rapidfuzz import fuzz
 
@@ -24,6 +24,17 @@ from tools.tabular.models import FileRef as TabularFileRef
 from vectordb.chroma_store import ChromaVectorStore
 from vectordb.reranker import DeepInfraReranker
 
+
+def _normalize_assigned_files(assigned_files: list) -> list:
+    normalized = []
+    for f in assigned_files:
+        if isinstance(f, FileRef):
+            normalized.append(f)
+        elif isinstance(f, dict):
+            normalized.append(FileRef(file_id=str(f.get('file_id', ''))))
+        else:
+            normalized.append(FileRef(file_id=str(f)))
+    return normalized
 
 def _looks_like_file_id(ref: str) -> bool:
     try:
@@ -162,7 +173,7 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
     async def invoke_tabular_agent(
         self,
         objective: str,
-        assigned_files: list[FileRef],
+        assigned_files: list[Union[FileRef, str]],
         constraints: Optional[dict] = None,
         must_export: bool = False,
     ):
@@ -182,6 +193,7 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
             location) - just mention them in your final answer; no further tool call is needed to
             produce or attach them."""
         constraints = constraints or {}
+        assigned_files = _normalize_assigned_files(assigned_files)
         self.state.selected_files.extend(f.file_id for f in assigned_files)
         tabular_files = [self._to_tabular_file_ref(f) for f in assigned_files]
         agent = TabularAgent(
@@ -212,7 +224,7 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
 
         if must_export:
             valid_refs = [ref for ref in result.artifact_refs if isinstance(ref, str) and _looks_like_file_id(ref)]
-            if not valid_refs:
+            if not valid_refs and not result.charts:
                 raise RuntimeError(
                     "invoke_tabular_agent was called with must_export=True but the Tabular "
                     "Agent did not return a real file_id (it likely never called save(), or "
@@ -278,7 +290,7 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
         self._record_event("database", objective, result)
         return result
 
-    async def invoke_document_agent(self, objective: str, assigned_files: list[FileRef], constraints: Optional[dict] = None):
+    async def invoke_document_agent(self, objective: str, assigned_files: list[Union[FileRef, str]], constraints: Optional[dict] = None):
         """Delegate a TARGETED document question to the Document Agent, scoped only to the
         given assigned_files. It runs its own RAG tool-calling loop (search, verify, table
         discovery) in an isolated context and returns one compact DocumentFindings - you never
@@ -289,6 +301,7 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
         takeaways, find anomalies/risks, extract action items, FAQ, insights) - use
         invoke_document_processor for those instead."""
         constraints = constraints or {}
+        assigned_files = _normalize_assigned_files(assigned_files)
         self.state.selected_files.extend(f.file_id for f in assigned_files)
         vector_store = self._get_vector_store()
         metadata_brief = build_document_metadata_brief(
@@ -308,7 +321,7 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
     async def invoke_document_processor(
         self,
         objective: str,
-        assigned_files: list[FileRef],
+        assigned_files: list[Union[FileRef, str]],
         constraints: Optional[dict] = None,
     ):
         """Deterministic whole-document analysis.
@@ -337,6 +350,7 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
         the final response.
         """
         constraints = constraints or {}
+        assigned_files = _normalize_assigned_files(assigned_files)
         self.state.selected_files.extend(f.file_id for f in assigned_files)
         processor = DocumentProcessor(assigned_files, vector_store=self._get_vector_store(), file_service=self.file_service)
         result = await processor.run(objective, constraints, on_event=self.on_event)

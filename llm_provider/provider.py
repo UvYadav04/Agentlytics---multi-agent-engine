@@ -15,6 +15,7 @@ class LLMProvider:
         self.fallback_provider = fallback
 
     def get_client(self, model: str = None):
+        settings = get_settings()
         builder = registry.get_builder(self.provider_name)
 
         if not self.fallback_provider or self.fallback_provider == self.provider_name:
@@ -22,14 +23,15 @@ class LLMProvider:
             return self._wrap(client, self.provider_name, model)
 
         fallback_builder = registry.get_builder(self.fallback_provider)
+        fallback_model = settings.get(f"{self.fallback_provider.upper()}_MODEL")
 
         try:
             primary = builder(model)
         except Exception:
-            fallback_client = fallback_builder(None)
-            return self._wrap(fallback_client, self.fallback_provider, None)
+            fallback_client = fallback_builder(fallback_model)
+            return self._wrap(fallback_client, self.fallback_provider, fallback_model)
 
-        wrapped = FallbackChatCompletionClient(primary, fallback_builder(None))
+        wrapped = FallbackChatCompletionClient(primary, fallback_builder(fallback_model))
         return self._wrap(wrapped, self.provider_name, model)
 
     @staticmethod

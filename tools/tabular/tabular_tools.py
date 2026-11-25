@@ -81,7 +81,7 @@ class TabularTools(AskUserMixin):
         return '"' + str(name).replace('"', '""') + '"'
 
     def list_allowed_files(self) -> list:
-        """Return metadata (row count, columns, queryable table_name) for every file assigned to
+        """Return metadata (row count, columns, sample rows, queryable table_name) for every file assigned to
         this agent. Use table_name (not file_id) to refer to a file inside run_python's dfs
         dict and sql() calls - file_id may contain characters (dots, hyphens) that aren't valid
         identifiers."""
@@ -90,12 +90,19 @@ class TabularTools(AskUserMixin):
             table = self._table(file_id)
             row_count = self.con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
             columns = [d[0] for d in self.con.execute(f"SELECT * FROM {table} LIMIT 0").description]
+            sample_rows = []
+            try:
+                sample_df = self.con.execute(f"SELECT * FROM {table} LIMIT 3").df()
+                sample_rows = json.loads(sample_df.to_json(orient="records", date_format="iso"))
+            except Exception:
+                pass
             files.append({
                 "file_id": file_id,
                 "table_name": table,
                 "filename": file_ref.filename,
                 "row_count": row_count,
                 "columns": columns,
+                "sample_rows": sample_rows,
             })
         return files
 

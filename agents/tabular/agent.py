@@ -62,7 +62,7 @@ class TabularAgent:
             ],
             system_message=get_system_message(direct_route),
             reflect_on_tool_use=False,
-            max_tool_iterations=10,
+            max_tool_iterations=5,
         )
         self.last_transform_script: str | None = None
         self.last_transform_file_ids: list = []
@@ -102,6 +102,15 @@ class TabularAgent:
         try:
             async for event in stream:
                 if not hasattr(event, "messages"):
+                    if type(event).__name__ == "ToolCallRequestEvent":
+                        if any(getattr(c, "name", None) == "run_python" for c in getattr(event, "content", [])) and self.tools.run_python_count >= self.tools.max_run_python_calls:
+                            self.logger.warning(
+                                "tabular agent attempted run_python beyond limit (%d/%d), stopping stream",
+                                self.tools.run_python_count, self.tools.max_run_python_calls,
+                            )
+                            await stream.aclose()
+                            break
+
                     log_event(self.logger, event)
                     tool_timer.record(event)
                     self._capture_run_python_call(event)
