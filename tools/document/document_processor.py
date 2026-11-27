@@ -176,7 +176,22 @@ class DocumentProcessor:
         if on_event is not None:
             await on_event({"type": "tool_call", "message": "Reading the full document"})
 
-        chunks = await asyncio.to_thread(_ordered_chunks, self.vector_store, self.assigned_file_ids)
+        try:
+            chunks = await asyncio.to_thread(_ordered_chunks, self.vector_store, self.assigned_file_ids)
+        except Exception as exc:
+            self.logger.warning(
+                "document_processor: failed to load chunks for file_ids=%s: %s",
+                self.assigned_file_ids, exc,
+            )
+            if on_event is not None:
+                await on_event({"type": "tool_error", "message": "Reading the full document"})
+            return DocumentFindings(
+                summary=(
+                    "Document storage is temporarily unavailable, so the document could not be read "
+                    "right now. Please try again shortly."
+                ),
+                artifact_refs=[], source_refs=[],
+            )
         if not chunks:
             self.logger.warning(
                 "document_processor: no chunks found for file_ids=%s", self.assigned_file_ids,

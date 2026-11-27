@@ -3,6 +3,7 @@ import time
 
 from llm_provider import LLMProvider
 from tools.ask_user import AskUserMixin
+from vectordb.base import VectorStoreError
 from tools.document.models import (
     ChunkResult,
     ComparisonResult,
@@ -59,6 +60,21 @@ class DocumentTools(AskUserMixin):
         score = meta.pop("score", 0.0)
         return ChunkResult(chunk_id=chunk.chunk_id, file_id=chunk.file_id, text=chunk.text, score=score, metadata=meta)
 
+    def _vector_call(self, op_name: str, fn):
+        try:
+            return fn()
+        except VectorStoreError as exc:
+            logger.warning("document_tools.%s vector store failure: %s", op_name, exc)
+            raise VectorStoreError(
+                "Document search storage is temporarily unavailable. Do not retry repeatedly; "
+                "inform the user that document search could not be reached right now."
+            ) from exc
+        except Exception as exc:
+            logger.exception("document_tools.%s unexpected vector store failure", op_name)
+            raise VectorStoreError(
+                "Document search failed unexpectedly. Inform the user that the document could not be searched right now."
+            ) from exc
+
     def _to_table_info(self, chunk) -> TableInfo:
         meta = chunk.metadata
         columns = [c.strip() for c in meta.get("columns", "").split(",") if c.strip()]
@@ -101,7 +117,10 @@ class DocumentTools(AskUserMixin):
         fetch_k = top_k * 3 if self.reranker else top_k
 
         query_start = time.perf_counter()
-        chunks = self.vector_store.query(query, fetch_k, filters=filters)
+        chunks = self._vector_call(
+            "search_documents",
+            lambda: self.vector_store.query(query, fetch_k, filters=filters),
+        )
         query_s = time.perf_counter() - query_start
 
         rerank_s = 0.0
@@ -131,7 +150,7 @@ class DocumentTools(AskUserMixin):
     def get_chunk(self, chunk_id: str) -> ChunkResult:
         """Fetch one chunk by its exact chunk_id. Use this to re-read a chunk you already found
         (e.g. from a search result) instead of searching again."""
-        results = self.vector_store.get_by_id([chunk_id])
+        results = self._vector_call("get_chunk", lambda: self.vector_store.get_by_id([chunk_id]))
         if not results:
             raise ValueError(f"chunk_id '{chunk_id}' not found")
         return self._to_result(results[0])
@@ -152,14 +171,20 @@ class DocumentTools(AskUserMixin):
                 {"chunk_index": {"$lte": chunk_index + window}},
             ]
         }
-        chunks = self.vector_store.get_by_filter(filters)
+        chunks = self._vector_call(
+            "get_surrounding_chunks",
+            lambda: self.vector_store.get_by_filter(filters),
+        )
         chunks.sort(key=lambda c: c.metadata.get("chunk_index", 0))
         return [self._to_result(c) for c in chunks]
 
     def list_file_sections(self, file_id: str) -> list:
         """List every section/heading in a file with its page range. Use this to understand a
         long document's structure before deciding where to search."""
-        chunks = self.vector_store.get_by_filter({"file_id": file_id})
+        chunks = self._vector_call(
+            "list_file_sections",
+            lambda: self.vector_store.get_by_filter({"file_id": file_id}),
+        )
 
         sections = {}
         for chunk in chunks:
@@ -198,7 +223,7 @@ class DocumentTools(AskUserMixin):
         (or search_tables) instead of guessing via search_documents whenever the objective is
         about what tables exist in a document."""
         filters = {"$and": [{"file_id": file_id}, {"type": "table"}]}
-        chunks = self.vector_store.get_by_filter(filters)
+        chunks = self._vector_call("list_tables", lambda: self.vector_store.get_by_filter(filters))
         return [self._to_table_info(c) for c in chunks]
 
     def search_tables(self, query: str, file_ids: list = None, top_k: int = 5) -> list:
@@ -208,7 +233,7 @@ class DocumentTools(AskUserMixin):
         annual returns"."""
         scoped = self._scoped_file_ids(file_ids)
         filters = {"$and": [{"file_id": {"$in": scoped}}, {"type": "table"}]}
-        chunks = self.vector_store.query(query, top_k, filters=filters)
+        chunks = self._vector_call("search_tables", lambda: self.vector_store.query(query, top_k, filters=filters))
         return [self._to_table_info(c) for c in chunks]
 
     def get_table(self, table_ref: str) -> TableInfo:
@@ -217,7 +242,7 @@ class DocumentTools(AskUserMixin):
         objective needs the real values or any computation over a table, report its table_ref
         so the Tabular Agent can be invoked on it - never fabricate or compute table values
         yourself."""
-        chunks = self.vector_store.get_by_filter({"table_ref": table_ref})
+        chunks = self._vector_call("get_table", lambda: self.vector_store.get_by_filter({"table_ref": table_ref}))
         if not chunks:
             raise ValueError(f"table_ref '{table_ref}' not found")
         return self._to_table_info(chunks[0])

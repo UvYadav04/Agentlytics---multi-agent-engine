@@ -2,6 +2,14 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 
+class VectorStoreError(RuntimeError):
+    """Raised when a vector store operation fails."""
+
+    def __init__(self, message: str, *, status_code: Optional[int] = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 class BaseVectorStore(ABC):
     @abstractmethod
     def upsert(self, chunks: list) -> list:

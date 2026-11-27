@@ -1,5 +1,5 @@
 from .schema import ChunkRecord
-from .base import BaseVectorStore
+from .base import BaseVectorStore, VectorStoreError
 from .reranker import BaseReranker, CrossEncoderReranker
 
-__all__ = ["ChunkRecord", "BaseVectorStore", "BaseReranker", "CrossEncoderReranker"]
+__all__ = ["ChunkRecord", "BaseVectorStore", "VectorStoreError", "BaseReranker", "CrossEncoderReranker"]
