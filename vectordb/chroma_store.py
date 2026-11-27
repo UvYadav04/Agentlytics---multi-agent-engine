@@ -1,4 +1,5 @@
 import logging
+import threading
 import time
 
 import chromadb
@@ -21,16 +22,44 @@ except Exception:
 
 class ChromaVectorStore(BaseVectorStore):
     def __init__(self, collection_name: str = "chunks", client=None):
-        if client is not None:
-            self.client = client
-        else:
-            settings = get_settings()
-            self.client = chromadb.CloudClient(
-                tenant=settings.CHROMA_TENANT,
-                database=settings.CHROMA_DATABASE,
-                api_key=settings.CHROMA_API_KEY,
-            )
-        self.collection = self.client.get_or_create_collection(name=collection_name)
+        self.collection_name = collection_name
+        self._client = client
+        self._collection = None
+        self._init_lock = threading.Lock()
+
+    @property
+    def client(self):
+        if self._client is None:
+            with self._init_lock:
+                if self._client is None:
+                    settings = get_settings()
+                    missing = [
+                        key for key in ("CHROMA_API_KEY", "CHROMA_TENANT", "CHROMA_DATABASE")
+                        if not settings.get(key)
+                    ]
+                    if missing:
+                        raise RuntimeError(
+                            f"Chroma Cloud is not configured (missing {', '.join(missing)})"
+                        )
+                    self._client = chromadb.CloudClient(
+                        tenant=settings.CHROMA_TENANT,
+                        database=settings.CHROMA_DATABASE,
+                        api_key=settings.CHROMA_API_KEY,
+                    )
+        return self._client
+
+    @property
+    def collection(self):
+        if self._collection is None:
+            with self._init_lock:
+                if self._collection is None:
+                    client = self.client
+                    self._collection = client.get_or_create_collection(name=self.collection_name)
+        return self._collection
+
+    def warmup(self) -> None:
+        """Eagerly establish the Chroma Cloud client and collection (safe to run in a background thread)."""
+        _ = self.collection
 
     def upsert(self, chunks: list) -> list:
         start = time.perf_counter()
