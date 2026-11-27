@@ -334,21 +334,24 @@ class DatabaseTools(AskUserMixin):
     async def build_live_dashboard(self, connection_id: str, request: str) -> dict[str, Any]:
         """
         Build a persistent LIVE dashboard with real-time charts on one of the user's connected databases (PostgreSQL or MongoDB).
-        Use ONLY when the user explicitly asks to build or create a dashboard.
+        Use ONLY when the user explicitly asks to build or create a dashboard, AND only AFTER you have
+        verified with the schema and execute_query that the requested tables/columns and data actually exist.
+        Pass a refined request mentioning the verified table/collection names, fields, and time window.
         """
         if self.connection_manager.database_access is None or not self.available_connections:
             return {"error": "No databases are connected to this workspace. Ask the user to connect one first."}
 
         try:
-            conn_info, conn_str = await self.connection_manager.database_access.resolve(connection_id)
+            conn_info, adapter = await self._resolve_adapter(connection_id)
         except LookupError as exc:
             return {"error": str(exc)}
 
+        resolved_id = conn_info.get("id") or connection_id
         result = await self.dashboard_service.build_live_dashboard(
-            connection_id=connection_id,
+            connection_id=resolved_id,
             request=request,
             connection_info=conn_info,
-            connection_string=conn_str,
+            connection_string=adapter.connection_string,
             workspace_id=self.workspace_id,
             on_event=self.on_event,
         )

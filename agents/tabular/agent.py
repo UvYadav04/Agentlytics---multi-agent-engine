@@ -55,7 +55,6 @@ class TabularAgent:
             tools=[
                 self.tools.list_allowed_files,
                 self.tools.run_python,
-                self.tools.propose_visualization,
                 self.tools.create_visualizations,
                 self.tools.build_live_dashboard,
                 self.tools.ask_user,

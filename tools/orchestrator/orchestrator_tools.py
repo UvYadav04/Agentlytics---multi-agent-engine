@@ -9,7 +9,6 @@ from agents.tabular import TabularAgent
 from shared.services import DashboardService, FileSystemService, TableArtifactService, VisualizationService
 from tools.ask_user import AskUserMixin
 from tools.database.connection_manager import ConnectionManager
-from tools.dashboard.live_tool import LiveDashboardMixin
 from sandbox.path_resolver import InvalidArtifactIdError, get_parquet_path, validate_segment
 from tools.hypothesis.hypothesis_tools import HypothesisTools
 from tools.hypothesis.models import HypothesisResult
@@ -44,7 +43,7 @@ def _looks_like_file_id(ref: str) -> bool:
         return False
 
 
-class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
+class OrchestratorTools(AskUserMixin):
     def __init__(
         self, catalog, state, vector_store=None, reranker=None, memory=None, storage=None,
         reports_dir: str = "data/reports", chat_id: str = "default", sandbox_manager=None,
@@ -245,16 +244,16 @@ class OrchestratorTools(AskUserMixin, LiveDashboardMixin):
         constraints: Optional[dict] = None,
     ) -> DatabaseFindings:
         """PRIMARY tool for all database operations: querying, fetching records, schema inspection,
-        and data analysis directly on connected databases (PostgreSQL or MongoDB).
+        data analysis, charts, and building live/persistent dashboards on connected databases (PostgreSQL or MongoDB).
 
         ALWAYS use this tool whenever the user:
         - Asks to fetch, view, query, or inspect data in a database (e.g. 'fetch me my database mongodb', 'show me users from PostgreSQL', 'find orders in MongoDB').
         - Asks analytical, aggregation, or exploratory questions about connected databases.
         - Wants to understand collections, tables, schemas, counts, or metrics from their database.
+        - Explicitly asks to build or create a live/persistent dashboard on a connected database (the Database Agent first verifies the data exists before building the dashboard).
 
-        DO NOT call build_live_dashboard unless the user explicitly and literally requests to create a persistent dashboard.
         Provide the target connection_id (from Connected databases) and your analytical objective.
-        The Database Agent inspects schemas, writes and executes safe read-only queries or pipelines, and returns structured findings."""
+        The Database Agent inspects schemas, writes and executes safe read-only queries or pipelines, and returns structured findings (and any created dashboards)."""
         constraints = constraints or {}
 
         if not connection_id and len(self.database_connections) == 1:

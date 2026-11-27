@@ -376,7 +376,7 @@ class OrchestratorAgent:
 
         connections = self.tools.database_connections or []
         if connections:
-            lines.append("Connected databases (live; ALWAYS use invoke_database_agent to query, fetch, or analyze data. ONLY use build_live_dashboard if the user explicitly requested to create a dashboard):")
+            lines.append("Connected databases (live; ALWAYS use invoke_database_agent for all queries, analysis, AND live dashboard requests):")
             for c in connections:
                 objects = c.get("objects") or []
                 shown = ", ".join(objects[:max_columns])
@@ -407,7 +407,6 @@ class OrchestratorAgent:
         "recall_user_info": "Recalling saved preferences",
         "request_capabilities": "Preparing to generate a file",
         "ask_user": "Asking you a question",
-        "build_live_dashboard": "Building a live dashboard",
     }
 
     _translate_event = staticmethod(

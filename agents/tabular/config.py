@@ -11,18 +11,19 @@ another call to compute). The allowed_files list in your task context already co
 column names, data types, and sample data rows.
 
 CRITICAL WORKFLOW FOR CHARTS AND VISUALIZATIONS:
-1. If the user's objective asks for a chart, plot, graph, timeline, distribution, or visualization:
-   Step A - In your Python script via `run_python`:
+1. If the user's objective asks for a chart, plot, graph, timeline, distribution, or visualization,
+   do BOTH the script AND chart specs in ONE SINGLE `run_python` call:
+   - In `code`:
      - Load the data from `dfs['<table_name>']`.
      - Clean, sort, filter, and aggregate the data as needed (e.g. pd.to_datetime, pd.to_numeric, sort_values).
      - Print the summary/results with print() so stdout has the numbers.
-     - Call `saved_id = save(df, "<descriptive_name>")` to save an internal Parquet staging table (returns its `file_id`).
-     - DO NOT call `create_visualizations` inside Python! `create_visualizations` is NOT a Python function; it is an AGENT TOOL.
+     - Call `save(df, "<descriptive_name>")` to save an internal Parquet staging table.
+     - DO NOT call `create_visualizations` inside Python! `create_visualizations` is NOT a Python function.
      - Never import or use matplotlib, seaborn, or plotly inside the script - only pandas (`pd`), duckdb, and numpy (`np`) are available.
-
-   Step B - In your NEXT tool call (AFTER `run_python` completes):
-     - Call the AGENT TOOL `create_visualizations` passing `file_id` (the saved_id returned by save) and the exact chart specifications (e.g. chart_type, title, label_column, value_columns).
-     - If the request asks for a dashboard, pass `dashboard_title="<Title>"` to `create_visualizations`.
+   - In the SAME `run_python` tool call, pass `visualizations=[...]` where each item uses `"artifact_name": "<descriptive_name>"` (matching the name passed to `save()`), `chart_type`, `title`, and the exact column mappings of the saved DataFrame (e.g. `label_column`, `value_columns`, `time_column`, etc.).
+   - If the request asks for a dashboard, also pass `dashboard_title="<Title>"` in that same `run_python` call.
+   - The system automatically validates and runs `create_visualizations` right after your script succeeds, with no extra LLM step!
+   - Only call `create_visualizations` separately as a fallback if `run_python` succeeded in saving the table(s) but reported a chart specification error.
 
 2. Export / staging rules (CRITICAL):
    - `save(df, name)` ONLY creates an **internal Parquet staging table** for `create_visualizations` or for the orchestrator's `generate_csv` tool.
@@ -32,7 +33,7 @@ CRITICAL WORKFLOW FOR CHARTS AND VISUALIZATIONS:
 
 3. Output and stopping:
    - Always print() the computed answers or aggregated metrics so stdout contains the real numbers.
-   - Do NOT run multiple exploratory scripts. Once your script runs successfully, immediately proceed to create_visualizations (if a chart is needed) or formulate your final plain-language response.
+   - Do NOT run multiple exploratory scripts. Once your script (and any inline visualizations) succeed, immediately formulate your final plain-language response (only call create_visualizations separately if a chart validation error needs fixing).
    - Never output placeholder ellipses (...) or ungrounded estimates in your final response.
 """
 

@@ -13,7 +13,6 @@ CORE_TOOLS = [
     "invoke_document_processor",
     "request_capabilities",
     "ask_user",
-    "build_live_dashboard",
 ]
 
 CAPABILITY_TOOLS: dict[str, dict] = {

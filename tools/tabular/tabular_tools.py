@@ -1,4 +1,7 @@
+import asyncio
+import json
 import logging
+import re
 import time
 from typing import Optional
 
@@ -106,22 +109,90 @@ class TabularTools(AskUserMixin):
             })
         return files
 
+    @staticmethod
+    def _safe_artifact_prefix(name: str) -> str:
+        return re.sub(r"[^0-9a-zA-Z_]", "_", str(name))[:40].strip("_") or "result"
+
+    def _resolve_inline_visualizations(self, visualizations: list[dict], saved_this_run: list[dict]) -> list[dict]:
+        """Resolve `artifact_name` (or name hints) in inline visualization specs to saved `file_id`s."""
+        resolved: list[dict] = []
+        for raw in visualizations:
+            if not isinstance(raw, dict):
+                resolved.append(raw)
+                continue
+            spec = dict(raw)
+            explicit_id = spec.get("file_id")
+            if explicit_id and explicit_id in self.saved_artifacts:
+                spec.pop("artifact_name", None)
+                resolved.append(spec)
+                continue
+
+            hint = spec.pop("artifact_name", None) or explicit_id
+            matched_id = None
+            if hint:
+                safe = self._safe_artifact_prefix(hint)
+                exact_re = re.compile(rf"^{re.escape(safe)}_[0-9a-f]{{8}}$")
+                for entry in reversed(saved_this_run):
+                    fid = entry.get("file_id") or ""
+                    if exact_re.match(fid):
+                        matched_id = fid
+                        break
+                if matched_id is None:
+                    prefix = f"{safe}_"
+                    for entry in reversed(saved_this_run):
+                        fid = entry.get("file_id") or ""
+                        if fid.startswith(prefix):
+                            matched_id = fid
+                            break
+            elif len(saved_this_run) == 1:
+                matched_id = saved_this_run[0].get("file_id")
+
+            if matched_id:
+                spec["file_id"] = matched_id
+            elif hint and not spec.get("file_id"):
+                spec["file_id"] = hint
+            resolved.append(spec)
+        return resolved
+
     @trace_tool(name="run_python_sandbox", component="tool.tabular.run_python", step_type="sandbox")
-    def run_python(self, code: str, file_ids: list) -> dict:
-        """Execute Python code in an isolated sandbox. Pass every assigned file_id you need.
+    async def run_python(
+        self,
+        code: str,
+        file_ids: list,
+        visualizations: Optional[list[dict]] = None,
+        dashboard_title: Optional[str] = None,
+    ) -> dict:
+        """Execute Python code in an isolated sandbox, and optionally render charts in the SAME step.
 
         Write ONE complete script that does the whole task (query, transform, compute, and save) - do not
         split the task across multiple run_python calls to explore step by step. You are allowed at most 3
         run_python calls per task. Only call this again if a runtime exception forces a bug fix.
+
+        If charts or a dashboard are requested, pass `visualizations` (and optional `dashboard_title`)
+        right here in this same call using `artifact_name` matching the `name` passed to `save(df, name)`
+        in your script. Charts will be validated and generated automatically as soon as the script succeeds,
+        without needing a separate `create_visualizations` turn.
+
+        Each item in `visualizations` supports:
+        - artifact_name: the `name` string you passed to `save(df, name)` inside `code`
+        - chart_type: "bar", "line", "timeline", "scatter3d", "surface", "pie", "histogram", "box", or "heatmap"
+        - title: Chart title
+        - Required column mappings based on chart_type (matching columns of the saved DataFrame):
+            * bar/line: label_column + value_columns (wide), OR label_column + series_column + value_column (long)
+            * timeline: time_column + value_columns, OR time_column + series_column + value_column
+            * scatter3d/surface/heatmap: x_column, y_column, z_column
+            * pie: label_column + value_column
+            * histogram: value_column (optional series_column, bins)
+            * box: value_column (optional label_column)
 
         Already defined in the global namespace - never import or redefine them:
         - dfs: {table_name: DataFrame} for every assigned file
         - describe(df): summary of a DataFrame
         - preview(df): small preview of a DataFrame
         - sql(query): runs SQL, returns a DataFrame
-        - save(df, name): saves an internal Parquet staging table ONLY (NOT .xlsx, NOT .csv, NOT user-downloadable); returns its file_id for create_visualizations or orchestrator generate_csv
+        - save(df, name): saves an internal Parquet staging table ONLY (NOT .xlsx, NOT .csv, NOT user-downloadable); returns its file_id for visualizations or orchestrator generate_csv
 
-        Only pandas (`pd`) and duckdb are installed - no matplotlib, sklearn, or other
+        Only pandas (`pd`), numpy (`np`), and duckdb are installed - no matplotlib, sklearn, or other
         third-party packages. Do not import anything; use the given functions directly."""
         if self._sandbox is None:
             raise RuntimeError("no storage configured for this agent, cannot run the sandbox")
@@ -165,12 +236,13 @@ class TabularTools(AskUserMixin):
         self.last_transform_file_ids = list(file_ids)
 
         logger.info(
-            "run_python (call %d/%d): chat=%s workspace=%s file_ids=%s code_chars=%d",
-            self.run_python_count, self.max_run_python_calls, self.chat_id, self.workspace_id, file_ids, len(code),
+            "run_python (call %d/%d): chat=%s workspace=%s file_ids=%s code_chars=%d inline_viz=%d",
+            self.run_python_count, self.max_run_python_calls, self.chat_id, self.workspace_id,
+            file_ids, len(code), len(visualizations or []),
         )
         t0 = time.perf_counter()
         try:
-            result = self._sandbox.run(code, tables, self.workspace_id)
+            result = await asyncio.to_thread(self._sandbox.run, code, tables, self.workspace_id)
         except SandboxExecutionError as exc:
             logger.warning(
                 "run_python: chat=%s raised after %.1fms: %s",
@@ -209,7 +281,8 @@ class TabularTools(AskUserMixin):
                 self.chat_id, elapsed_ms, len(result.get("saved") or []),
             )
 
-        for entry in result.get("saved") or []:
+        saved_this_run = result.get("saved") or []
+        for entry in saved_this_run:
             file_id = entry.get("file_id")
             if file_id:
                 self.saved_artifacts[file_id] = entry
@@ -217,7 +290,29 @@ class TabularTools(AskUserMixin):
                     self.table_service.register_artifact(file_id, entry, self.workspace_id)
 
         if not result.get("error"):
-            if self.saved_artifacts:
+            if visualizations:
+                resolved_specs = self._resolve_inline_visualizations(visualizations, saved_this_run)
+                viz_result = await self.create_visualizations(resolved_specs, dashboard_title=dashboard_title)
+                result["visualizations"] = viz_result
+                if viz_result.get("status") == "success":
+                    result["guidance"] = (
+                        "Script executed and all requested visualization(s) were generated in this step. "
+                        "Do NOT call run_python or create_visualizations again. "
+                        "Formulate your final plain-language answer using the real computed values."
+                    )
+                else:
+                    saved_cols = {
+                        e.get("file_id"): e.get("columns")
+                        for e in saved_this_run
+                        if e.get("file_id")
+                    }
+                    result["guidance"] = (
+                        f"Script executed and saved artifact(s) {saved_cols}, but visualization creation "
+                        f"returned status={viz_result.get('status')!r} with errors={viz_result.get('errors')}. "
+                        "Do NOT re-run run_python. Call create_visualizations once with the exact saved file_id "
+                        "and exact column names above to fix the remaining chart(s), or answer if chart limit was reached."
+                    )
+            elif self.saved_artifacts:
                 result["guidance"] = (
                     f"Internal Parquet staging table(s) saved: {list(self.saved_artifacts.keys())} "
                     "(for create_visualizations or orchestrator generate_csv only - NOT .xlsx/.csv and NOT user-downloadable). "
@@ -477,25 +572,15 @@ class TabularTools(AskUserMixin):
     async def build_live_dashboard(
         self,
         title: str,
-        visualizations: Optional[list[dict]] = None,
-        connection_id: Optional[str] = None,
-        request: Optional[str] = None,
+        visualizations: list[dict],
     ) -> dict:
         """
-        Build a persistent dashboard.
-        - For tabular file results: provide title and visualizations list to create an auto-refreshing dashboard bundle.
-        - For connected databases: provide connection_id and request.
+        Build a persistent, auto-refreshing dashboard bundle from saved tabular file artifacts.
         """
-        if connection_id and request and self.dashboard_service:
-            return await self.dashboard_service.build_live_dashboard(
-                connection_id=connection_id,
-                request=request,
-                workspace_id=self.workspace_id,
-            )
         if visualizations:
             res = await self.create_visualizations(visualizations=visualizations, dashboard_title=title)
             return res.get("dashboard", res)
-        return {"status": "error", "error": "Either (title, visualizations) or (connection_id, request) must be provided."}
+        return {"status": "error", "error": "visualizations list must be provided."}
 
     def _validate_chart_request(self, raw) -> tuple:
         if not isinstance(raw, dict):

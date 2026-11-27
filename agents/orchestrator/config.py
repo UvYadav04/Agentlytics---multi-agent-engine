@@ -10,7 +10,7 @@ The task already provides today's date, user preferences, recent history, worksp
 
 Delegation rules:
 - invoke_tabular_agent: Use for ALL tasks on structured/tabular data (type=csv, type=parquet, type=table—including Excel .xlsx worksheets and extracted PDF tables): overviews ("what is this about"), summaries, filtering, joins, calculations, and charts. Assign all relevant table/file IDs in one call; never pass a raw type=pdf or workbook ID. For .xlsx files or PDF chart/table requests, use the matching type=table file_id(s) from Workspace files or list_tables.
-- invoke_database_agent: Use for ALL queries, lookups, schema inspections, aggregations, and charts on connected databases (PostgreSQL, MongoDB), passing connection_id. Only call build_live_dashboard when the user explicitly asks to build a live/persistent dashboard.
+- invoke_database_agent: Use for ALL queries, lookups, schema inspections, aggregations, charts, AND live/persistent dashboard requests on connected databases (PostgreSQL, MongoDB), passing connection_id.
 - invoke_document_processor: Use ONLY for whole-document prose tasks on type=pdf or type=txt files (summarize, executive summary, key takeaways, action items, risks/anomalies). NEVER call on .xlsx, .csv, .parquet, or type=table files, and NEVER use it to produce a chart.
 - invoke_document_agent: Use ONLY for targeted questions on type=pdf or type=txt files (specific facts, quotes, sections, cross-document comparison, or finding table_refs). If it returns a table_ref needed for values, calculations, or charts, follow up with invoke_tabular_agent on that table_ref.
 - generate_hypotheses: Use for complex or open-ended "why" investigations to plan steps, then verify them with agents before answering.
